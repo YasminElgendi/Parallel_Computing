@@ -156,7 +156,8 @@ int main(char argc, char *argv[])
         cudaMemcpy(d_b, b, sizeof(float) * N, cudaMemcpyHostToDevice);
 
         int blockSize = 256;
-        int gridSize = (rows + blockSize) / blockSize;
+        int gridSize = (columns + blockSize) / blockSize;
+        printf("gridSize: %d\n", gridSize); 
         dim3 threadsPerBlock(16, 16);
 
         // 5. Executing kernel
@@ -166,10 +167,10 @@ int main(char argc, char *argv[])
         cudaMemcpy(out, d_out, sizeof(float) * N, cudaMemcpyDeviceToHost);
 
         // 7. Verification
-        // for (int i = 0; i < N; i++)
-        // {
-        //     assert(fabs(out[i] - a[i] - b[i]) < MAX_ERR);
-        // }
+        for (int i = 0; i < N; i++)
+        {
+            assert(fabs(out[i] - a[i] - b[i]) < MAX_ERR);
+        }
 
         for (int i = 0; i < N; i++)
         {

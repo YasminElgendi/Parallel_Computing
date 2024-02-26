@@ -155,7 +155,7 @@ int main(char argc, char *argv[])
         cudaMemcpy(d_b, b, sizeof(float) * N, cudaMemcpyHostToDevice);
 
         int blockSize = 256;
-        int gridSize = (columns + blockSize) / blockSize;
+        int gridSize = (rows + blockSize) / blockSize;
         dim3 threadsPerBlock(16, 16);
 
         // 5. Executing kernel
