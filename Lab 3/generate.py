@@ -4,10 +4,14 @@ import random
 
 def generate_test_file(array_size,filename):
     with open(filename, "w") as file:
+        array = []
         for i in range(array_size):
-            line = str(round(random.uniform(1, 10), 1))
-            line += '\n' if i != array_size - 1 else ''
-            file.write(line)
+            number = round(random.uniform(1, 10), 1)
+            array.append(number)
+        sorted_array = sorted(array)
+
+        for i in range(array_size):
+            file.write(str(sorted_array[i]) + '\n' if i != array_size - 1 else str(sorted_array[i]))
 
 def main():
     parser = argparse.ArgumentParser(description="Generate input file.")

@@ -6,8 +6,10 @@
 #include <cuda_runtime.h>
 #include <fstream>
 
-__global__ void kernel(float *d_array, float target_value, int size)
+__global__ void kernel(float *d_array, float target_value, int size, float *result)
 {
+    const int num_of_threads = blockDim.x * gridDim.x;
+	const int index = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
 int getSize(FILE *input)
@@ -71,6 +73,17 @@ int main(char argc, char *argv[])
     // Allocate device memory
     cudaMalloc((void **)&d_array, sizeof(float) * size);
     cudaMalloc((void **)&d_result, sizeof(float) * 2);
+
+    // Transfer data from host to device memory
+    cudaMemcpy(d_array, array, sizeof(float) * size, cudaMemcpyHostToDevice);
+
+    int block_size = 256;
+    int grid_size = (size + block_size - 1) / block_size;
+
+    kernel<<<grid_size, block_size>>>(d_array, size, target_value, d_result);
+
+    // Transfer data back to host memory
+    cudaMemcpy(result, d_result, sizeof(float), cudaMemcpyDeviceToHost);
 
     // 8. Deallocate device memory
     cudaFree(d_array);
