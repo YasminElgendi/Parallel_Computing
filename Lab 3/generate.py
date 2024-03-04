@@ -4,8 +4,10 @@ import random
 
 def generate_test_file(array_size,filename):
     with open(filename, "w") as file:
-        for _ in range(array_size):
-            file.write(str(round(random.uniform(1, 10), 1))+ "\n")
+        for i in range(array_size):
+            line = str(round(random.uniform(1, 10), 1))
+            line += '\n' if i != array_size - 1 else ''
+            file.write(line)
 
 def main():
     parser = argparse.ArgumentParser(description="Generate input file.")
