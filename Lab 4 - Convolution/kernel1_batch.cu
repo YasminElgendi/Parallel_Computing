@@ -13,12 +13,6 @@
 #include "./include/stb/stb_image_write.h"
 #include "read_data.h"
 
-#define NUM_PIXELS_TO_PRINT 10
-#define IMAGE_WIDTH 512
-#define IMAGE_HEIGHT 256
-#define CHANNELS 3
-#define MASK_SIZE 10
-
 __constant__ float constant_mask[MASK_SIZE * MASK_SIZE]; // constant memory for the mask
 
 // Carry out a 3D convolution over RGB images and save the output ones
@@ -67,10 +61,15 @@ __global__ void kernel1_batch(unsigned char *output_images, unsigned char *input
     }
 }
 
+// Dealing with the output images
+// Deals with the threads, block and grid dimensions
+// Calls the kernel to calculate the output images
+// Transfers the output images from device to host
+// Saves the output images
 void calculateOutput(int depth, unsigned char *output_images, unsigned char *device_outputs, unsigned char *device_images, int mask_size, char *output_folder_path, char **output_image_filenames)
 {
     // calculate the block and grid size
-    dim3 block_dim(16, 16, depth);
+    dim3 block_dim(16, 16);
     int grid_columns = ceil((float)IMAGE_WIDTH / block_dim.x);
     int grid_rows = ceil((float)IMAGE_HEIGHT / block_dim.y);
     dim3 grid_dim(grid_columns, grid_rows, depth);
@@ -82,7 +81,6 @@ void calculateOutput(int depth, unsigned char *output_images, unsigned char *dev
     cudaMemcpy(output_images, device_outputs, IMAGE_WIDTH * IMAGE_HEIGHT * depth * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 
     printf("OUTPUT IMAGES COPIED TO HOST\n");
-    printf("Output image\n");
 
     // Get full output path
     char full_output_path[256];
@@ -107,7 +105,6 @@ int main(char argc, char *argv[])
     int batch_size = readCommandLineArguments(argc, argv, &input_folder_path, &output_folder_path, &mask_file_path);
 
     // Allocate memory for filenames to save output images
-    // char *output_image_filenames = (char *)malloc(batch_size * 256 * sizeof(char *));
     char **output_image_filenames = (char **)malloc(batch_size * sizeof(char *)); // Dynamic allocation for image names
 
     printf("%s\n", input_folder_path);
@@ -151,6 +148,7 @@ int main(char argc, char *argv[])
     if ((input_directory = opendir(input_folder_path)) != NULL)
     {
         printf("Input directory opened\n");
+
         // Read all images in batches and send to the GPU for convolution
         while ((entry = readdir(input_directory)) != NULL)
         {
@@ -159,7 +157,6 @@ int main(char argc, char *argv[])
                 const char *image_name = entry->d_name;
                 printf("Image File name = %s\n", image_name);
                 output_image_filenames[batch_count] = strdup(image_name);
-                printf("OUTPUT FILE NAME: %s\n", output_image_filenames[batch_count]);
 
                 // Get full input path
                 char full_input_path[256];
@@ -176,11 +173,7 @@ int main(char argc, char *argv[])
                     exit(1);
                 }
 
-                printf("ALOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\n");
-
                 assert(width == IMAGE_WIDTH && height == IMAGE_HEIGHT && channels == CHANNELS);
-
-                printf("BATCH COUNT: %d\n", batch_count);
 
                 // Copy image data from host to device
                 cudaMemcpy(device_images + batch_count * width * height * channels, input_image, width * height * channels * sizeof(unsigned char), cudaMemcpyHostToDevice);
@@ -192,57 +185,8 @@ int main(char argc, char *argv[])
                 batch_count++;
                 if (batch_count >= batch_size)
                 {
-                    // printf("BATCH COUNT: %d\n", batch_count);
-                    // calculateOutput(batch_count, output_images, device_outputs, device_images, mask_size, batch_size, output_folder_path, output_image_filenames);
-                    printf("Batch count = %d\n", batch_count);
-
-                    // calculate the block and grid size
-                    dim3 block_dim(16, 16);
-                    int grid_columns = ceil((float)IMAGE_WIDTH / block_dim.x);
-                    int grid_rows = ceil((float)IMAGE_HEIGHT / block_dim.y);
-                    dim3 grid_dim(grid_columns, grid_rows, batch_size);
-
-                    // call the kernel on the batch of images read
-                    kernel1_batch<<<grid_dim, block_dim>>>(device_outputs, device_images, IMAGE_WIDTH, IMAGE_HEIGHT, channels, mask_size, batch_size);
-
-                    // If Error occurs in kernel execution show it using cudaDeviceSynchronize, cudaGetLastError
-                    cudaDeviceSynchronize();
-                    cudaError_t error = cudaGetLastError();
-                    if (error != cudaSuccess)
-                    {
-                        // in red
-                        printf("\033[1;31m");
-                        printf("CUDA error: %s\n", cudaGetErrorString(error));
-                        // reset color
-                        printf("\033[0m");
-                    }
-
-                    // transfer the output images from device to host
-                    cudaMemcpy(output_images, device_outputs, IMAGE_WIDTH * IMAGE_HEIGHT * batch_size * sizeof(unsigned char), cudaMemcpyDeviceToHost);
-                    for (size_t i = 0; i < NUM_PIXELS_TO_PRINT; i++)
-                    {
-                        printf("%d ", output_images[i]);
-                    }
-                    printf("\n");
-
-                    printf("OUTPUT IMAGES COPIED TO HOST\n");
-                    printf("Output image\n");
-
-                    // Get full output path
-                    char full_output_path[256];
-
-                    // save images
-                    for (int i = 0; i < batch_size; i++)
-                    {
-                        sprintf(full_output_path, "%s/%s", output_folder_path, output_image_filenames[i]);
-                        printf("FULL OUTPUT PATH: %s\n", full_output_path);
-
-                        stbi_write_jpg(full_output_path, IMAGE_WIDTH, IMAGE_HEIGHT, 1, output_images + i * IMAGE_WIDTH * IMAGE_HEIGHT, 100);
-                    }
-
-                    printf("FY EHHHHHHHHHHHH\n");
-
-                    // reset counter
+                    printf("BATCH COUNT: %d\n", batch_count);
+                    calculateOutput(batch_size, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
                     batch_count = 0;
                 }
             }
@@ -251,41 +195,20 @@ int main(char argc, char *argv[])
         printf("BATCH COUNT: %d\n", batch_count);
         if (batch_count != 0) // if the file_count % batch_size != 0
         {
-            // calculateOutput(batch_count, output_images, device_outputs, device_images, mask_size, batch_size, output_folder_path, output_image_filenames);
-            // calculate the block and grid size
-            dim3 block_dim(16, 16);
-            int grid_columns = ceil((float)IMAGE_WIDTH / block_dim.x);
-            int grid_rows = ceil((float)IMAGE_HEIGHT / block_dim.y);
-            dim3 grid_dim(grid_columns, grid_rows, batch_count);
-
-            // call the kernel on the batch of images read
-            kernel1_batch<<<grid_dim, block_dim>>>(device_outputs, device_images, IMAGE_WIDTH, IMAGE_HEIGHT, CHANNELS, mask_size, batch_count);
-
-            // transfer the output images from device to host
-            cudaMemcpy(output_images, device_outputs, IMAGE_WIDTH * IMAGE_HEIGHT * batch_count * sizeof(unsigned char), cudaMemcpyDeviceToHost);
-
-            printf("OUTPUT IMAGES COPIED TO HOST\n");
-            printf("Output image\n");
-
-            // Get full output path
-            char full_output_path[256];
-
-            // save images
-            for (int i = 0; i < batch_count; i++)
-            {
-                sprintf(full_output_path, "%s/%s", output_folder_path, output_image_filenames[i]);
-                printf("FULL OUTPUT PATH: %s\n", full_output_path);
-
-                stbi_write_jpg(full_output_path, IMAGE_WIDTH, IMAGE_HEIGHT, 1, output_images + i * IMAGE_WIDTH * IMAGE_HEIGHT, 100);
-            }
-
-            printf("FY EHHHHHHHHHHHH\n");
+            calculateOutput(batch_count, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
         }
 
+        // free dynamically allocated host memory
+        free(mask);
         free(output_images);
         free(output_image_filenames);
+
+        // free device memory
         cudaFree(device_images);
         cudaFree(device_outputs);
+
+        // close the opened folders and files
+        fclose(mask_file);
         closedir(input_directory);
     }
     else
@@ -294,14 +217,6 @@ int main(char argc, char *argv[])
         perror("");
         return EXIT_FAILURE;
     }
-
-    printf("CLOSING FILES\n");
-
-    // close the files
-    fclose(mask_file);
-
-    // free host memory
-    free(mask);
 
     return 0;
 }

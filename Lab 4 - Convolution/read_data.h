@@ -6,7 +6,11 @@
 #include <stdio.h>
 #include "./include/stb/stb_image.h"
 
-const size_t NUM_PIXELS_TO_PRINT = 10;
+#define NUM_PIXELS_TO_PRINT 10
+#define IMAGE_WIDTH 512
+#define IMAGE_HEIGHT 256
+#define CHANNELS 3
+#define MASK_SIZE 10
 
 // read rgb image given the file path
 unsigned char *readImage(char const *filepath, int *width, int *height, int *comp)
