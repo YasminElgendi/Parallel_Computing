@@ -12,9 +12,7 @@
 #include "./include/stb/stb_image_write.h"
 #include "read_data.h"
 
-#define NUM_PIXELS_TO_PRINT 10
-
-__constant__ float constant_mask[100]; // constant memory for the mask
+__constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant memory for the mask
 
 // Carry out a 3D convolution over RGB images and save the output ones
 // 1. kernel1: basic implementation (no tiling) => each thread computes a single pixel in the output image
@@ -31,8 +29,6 @@ __global__ void kernel1(unsigned char *output_image, unsigned char *input_image,
     // check if the pixel is within the image boundaries
     if (column < width && row < height)
     {
-        // printf("width = %d, height = %d\n", width, height);
-        // printf("column = %d, row = %d\n", column, row);
         float pixel_value = 0;
 
         // get the start of column and row for the current pixel being convulted
@@ -41,8 +37,6 @@ __global__ void kernel1(unsigned char *output_image, unsigned char *input_image,
         // iterate over the three channels => for a single thread compute the pixel values for all three channels
         for (int c = 0; c < comp; c++)
         {
-            // printf("pixel_value = %d\n", pixel_value);
-
             // iterate over the mask elements => surrounding box
             for (int mask_row = 0; mask_row < mask_size; mask_row++) // rows
             {
@@ -140,7 +134,7 @@ int main(char argc, char *argv[])
     cudaMemcpy(output_image, d_out, sizeof(unsigned char) * width * height, cudaMemcpyDeviceToHost);
 
     // 6. Write output image
-    
+
     stbi_write_jpg("./output/output_image.jpg", width, height, 1, output_image, 100);
     printf("OUTPUT IMAGE\n");
     for (size_t i = 0; i < NUM_PIXELS_TO_PRINT * comp; i++)

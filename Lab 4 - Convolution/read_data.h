@@ -10,15 +10,12 @@
 #define IMAGE_WIDTH 512
 #define IMAGE_HEIGHT 256
 #define CHANNELS 3
-#define MASK_SIZE 10
+#define MAX_MASK_SIZE 10
 
 // read rgb image given the file path
 unsigned char *readImage(char const *filepath, int *width, int *height, int *comp)
 {
-    printf("Reading image from %s\n", filepath);
     unsigned char *data = stbi_load(filepath, width, height, comp, 0);
-    printf("Read image from %s\n", filepath);
-
     if (*data)
     {
         // for (size_t i = 0; i < NUM_PIXELS_TO_PRINT * (*comp); i++)
@@ -78,6 +75,7 @@ void printMask(float *mask, int mask_size)
 
 int readCommandLineArguments(int argc, char *argv[], char **input_image_path, char **output_image_path, char **mask_path)
 {
+
     if (argc < 5)
     {
         printf("Usage: %s <input_image_path> <output_image_path> <mask_path>\n", argv[0]);
