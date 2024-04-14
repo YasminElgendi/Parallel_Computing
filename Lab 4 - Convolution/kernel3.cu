@@ -12,39 +12,72 @@
 #include "./include/stb/stb_image_write.h"
 #include "read_data.h"
 
-#define OUTPUT_TILE_SIZE 16
+#define OUTPUT_TILE_WIDTH 14 // => 16 x 16 = 256
 
 __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant memory for the mask
 
 // 3. kernel3: tiling where each block matches the output tile size.
-// each block calculates an output tile => block size = output tile size
-// to calculate the output tile we need (OUTPUT_TILE_SIZE + MASK_SIZE - 1) pixels from the input image => load into shared memory
-// All threads will participate in calculating the output elements
-// Some threads will load more than one pixel from the input image
-__global__ void kernel3(unsigned char *output_image, unsigned char *input_image, int width, int height, int comp, int mask_size)
+// The size of the block matches the size of the input tile
+__global__ void kernel3(unsigned char *output_image, unsigned char *input_image, int width, int height, int comp, int mask_size, int input_tile_width)
 {
     // get the pixel index
-    int column = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int out_column = blockIdx.x * OUTPUT_TILE_WIDTH + threadIdx.x;
+    int out_row = blockIdx.y * OUTPUT_TILE_WIDTH + threadIdx.y;
+
+    // printf("out_column = %d, out_row = %d\n", out_column, out_row);
+
+    // indices to access the shared memory
+    int in_column = out_column - mask_size / 2;
+    int in_row = out_row - mask_size / 2;
 
     // STEPS:
     // 1. Load data into shared memory
-    extern __shared__ int shared_input[]; // Example: Allocate 256 integers of shared memory
+    // some threads will load more than one pixel to the shared memeory
+    // each thread will load 3 values corresponding to the three channels
+    extern __shared__ float shared_input[]; // Example: Allocate the input tile size of shared memory
+
+    for (int c = 0; c < comp; c++)
+    {
+        for (int i = threadIdx.x; i < input_tile_width; i++)
+        {
+            for (int j = threadIdx.y; j < input_tile_width; j++)
+            {
+                if ((in_column + i) >= 0 && (in_column + i) < width && (in_row + j) >= 0 && (in_row + j) < height)
+                {
+                    shared_input[(j * input_tile_width + i) * comp + c] = (float)input_image[((in_row + j) * width + (in_column + i)) * comp + c];
+                }
+                else
+                {
+                    shared_input[(j * input_tile_width + i) * comp + c] = 0.0f;
+                }
+            }
+        }
+    }
+
+    __syncthreads();
 
     // 2. Compute the output tile
-    // 3. Write the output tile to the output image
 
-    // check if the pixel is within the image boundaries
+    // all threads will participate in computing the pixel value
+    // no need to check if the thread is within the boundaries
+    if (out_column < width && out_row < height)
+    {
+        float pixel_value = 0.0f;
+        for (int c = 0; c < comp; c++)
+        {
+            // iterate over the mask elements => surrounding box
+            for (int mask_row = 0; mask_row < mask_size; mask_row++) // rows
+            {
+                for (int mask_column = 0; mask_column < mask_size; mask_column++) // columns
+                {
+                    pixel_value += shared_input[((threadIdx.y + mask_row) * input_tile_width + (threadIdx.x + mask_column)) * comp + c] * constant_mask[mask_row * mask_size + mask_column];
+                }
+            }
+        }
 
-    // get the start of column and row for the current pixel being convulted
-
-    // iterate over the three channels => for a single thread compute the pixel values for all three channels
-
-    // iterate over the mask elements => surrounding box
-
-    // check if the current pixel is within the image boundaries => no padding was added
-
-    // write the pixel value to the output image
+        // 3. Write the output tile to the output image
+        output_image[out_row * width + out_column] = (unsigned char)pixel_value;
+    }
 }
 
 int main(char argc, char *argv[])
@@ -56,12 +89,19 @@ int main(char argc, char *argv[])
     char *mask_file_path;
 
     int batch_size = readCommandLineArguments(argc, argv, &input_folder_path, &output_folder_path, &mask_file_path);
+    printf("mask_file_path = %s\n", mask_file_path);
 
     // 1. Allocate host memory => read input image / convolution mask
 
     // 1.1 Read image
     int width, height, comp;
-    unsigned char *input_image = readImage(strcat(input_folder_path, "/image.jpg"), &width, &height, &comp);
+
+    // get the fulle input path of the image
+    char full_input_path[256];
+    sprintf(full_input_path, "%s/%s", input_folder_path, "/image.jpg");
+
+    unsigned char *input_image = readImage(full_input_path, &width, &height, &comp);
+
     if (!input_image)
     {
         printf("Error: failed to read image\n");
@@ -77,7 +117,7 @@ int main(char argc, char *argv[])
     FILE *mask_file = fopen(mask_file_path, "r");
     if (!mask_file)
     {
-        printf("Error: failed to read mask\n");
+        printf("Error: failed to open mask file\n");
         exit(1);
     }
 
@@ -92,6 +132,10 @@ int main(char argc, char *argv[])
     // Copy Filter to constant memory
     cudaMemcpyToSymbol(constant_mask, mask, mask_size * mask_size * sizeof(float));
 
+    const int input_tile_width = OUTPUT_TILE_WIDTH + mask_size - 1;
+    printf("INPUT TILE WIDTH = %d\n", input_tile_width);
+    printf("OUTPUT TILE WIDTH = %d\n", OUTPUT_TILE_WIDTH);
+
     // 2. Allocate device memory
     unsigned char *d_image, *d_out;
     cudaMalloc((void **)&d_image, sizeof(unsigned char) * N);
@@ -101,10 +145,14 @@ int main(char argc, char *argv[])
     cudaMemcpy(d_image, input_image, sizeof(unsigned char) * N, cudaMemcpyHostToDevice);
 
     // 4. Launch kernel
-    dim3 block_dim(16, 16, 1);
-    dim3 grid_dim(ceil(width / 16.0), ceil(height / 16.0), 1);
+    dim3 block_dim(OUTPUT_TILE_WIDTH, OUTPUT_TILE_WIDTH);
+    int grid_columns = ceil((float)width / OUTPUT_TILE_WIDTH);
+    int grid_rows = ceil((float)height / OUTPUT_TILE_WIDTH);
+    dim3 grid_dim(grid_columns, grid_rows);
 
-    kernel3<<<grid_dim, block_dim>>>(d_out, d_image, width, height, comp, mask_size);
+    int shared_memory_size = input_tile_width * input_tile_width * comp * sizeof(float);
+
+    kernel3<<<grid_dim, block_dim, shared_memory_size>>>(d_out, d_image, width, height, comp, mask_size, input_tile_width);
 
     // If Error occurs in kernel execution show it using cudaDeviceSynchronize, cudaGetLastError
     cudaDeviceSynchronize();
