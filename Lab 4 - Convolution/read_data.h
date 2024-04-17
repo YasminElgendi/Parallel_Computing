@@ -5,18 +5,13 @@
 
 #include <stdio.h>
 #include "./include/stb/stb_image.h"
+#include "./include/dirent.h"
 
 #define NUM_PIXELS_TO_PRINT 10
 #define IMAGE_WIDTH 512
 #define IMAGE_HEIGHT 256
-#define CHANNELS 3
+// #define CHANNELS 3
 #define MAX_MASK_SIZE 10
-
-
-void getImageDimensions(char const *filepath, int *width, int *height, int *comp)
-{
-    
-}
 
 // read rgb image given the file path
 unsigned char *readImage(char const *filepath, int *width, int *height, int *comp)
@@ -27,6 +22,44 @@ unsigned char *readImage(char const *filepath, int *width, int *height, int *com
         return data;
     }
     return NULL;
+}
+
+bool getImageDimensions(char *input_folder_path, int *width, int *height, int *channels)
+{
+    DIR *input_directory;
+    struct dirent *entry;
+
+    if ((input_directory = opendir(input_folder_path)) != NULL) // loop to make sure that the file read is an image
+    {
+        while ((entry = readdir(input_directory)) != NULL)
+        {
+            if (entry->d_type == DT_REG)
+            {
+                const char *image_name = entry->d_name;
+                // Get full input path
+                char full_input_path[256];
+                sprintf(full_input_path, "%s/%s", input_folder_path, image_name);
+                printf("FULL INPUT PATH: %s\n", full_input_path);
+
+                // Read the image
+                unsigned char *input_image = readImage(full_input_path, width, height, channels);
+
+                if (input_image == NULL)
+                {
+                    printf("Error: failed to read image\n");
+                    exit(1);
+                }
+
+                printf("width = %d, height = %d, channels = %d\n", *width, *height, *channels);
+
+                break;
+            }
+        }
+
+        closedir(input_directory);
+        return true;
+    }
+    return false;
 }
 
 // read mask elements from file

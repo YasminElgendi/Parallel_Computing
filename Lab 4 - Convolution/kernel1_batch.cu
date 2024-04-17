@@ -70,19 +70,19 @@ __global__ void kernel1_batch(unsigned char *output_images, float *input_images,
 // Calls the kernel to calculate the output images
 // Transfers the output images from device to host
 // Saves the output images
-void calculateOutput(int depth, unsigned char *output_images, unsigned char *device_outputs, float *device_images, int mask_size, char *output_folder_path, char **output_image_filenames)
+void calculateOutput(int width, int height, int channels, int depth, unsigned char *output_images, unsigned char *device_outputs, float *device_images, int mask_size, char *output_folder_path, char **output_image_filenames)
 {
     // calculate the block and grid size
     dim3 block_dim(16, 16);
-    int grid_columns = ceil((float)IMAGE_WIDTH / block_dim.x);
-    int grid_rows = ceil((float)IMAGE_HEIGHT / block_dim.y);
+    int grid_columns = ceil((float)width / block_dim.x);
+    int grid_rows = ceil((float)height / block_dim.y);
     dim3 grid_dim(grid_columns, grid_rows, depth);
 
     // call the kernel on the batch of images read
-    kernel1_batch<<<grid_dim, block_dim>>>(device_outputs, device_images, IMAGE_WIDTH, IMAGE_HEIGHT, CHANNELS, mask_size, depth);
+    kernel1_batch<<<grid_dim, block_dim>>>(device_outputs, device_images, width, height, channels, mask_size, depth);
 
     // transfer the output images from device to host
-    cudaMemcpy(output_images, device_outputs, IMAGE_WIDTH * IMAGE_HEIGHT * depth * sizeof(unsigned char), cudaMemcpyDeviceToHost);
+    cudaMemcpy(output_images, device_outputs, width * height * depth * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 
     printf("OUTPUT IMAGES COPIED TO HOST\n");
 
@@ -95,7 +95,7 @@ void calculateOutput(int depth, unsigned char *output_images, unsigned char *dev
         sprintf(full_output_path, "%s/%s", output_folder_path, output_image_filenames[i]);
         printf("FULL OUTPUT PATH: %s\n", full_output_path);
 
-        stbi_write_jpg(full_output_path, IMAGE_WIDTH, IMAGE_HEIGHT, 1, output_images + i * IMAGE_WIDTH * IMAGE_HEIGHT, 100);
+        stbi_write_jpg(full_output_path, width, height, 1, output_images + i * width * height, 100);
     }
 }
 
@@ -114,17 +114,29 @@ int main(char argc, char *argv[])
     printf("%s\n", input_folder_path);
     printf("%s\n", output_folder_path);
 
+    // First get the dimension of the images => all images are supposed to have the same dimension => get the dimension of the first image
+    int WIDTH, HEIGHT, CHANNELS; // image dimensions for all images in the input folder
+    bool success = getImageDimensions(input_folder_path, &WIDTH, &HEIGHT, &CHANNELS);
+
+    if (!success)
+    {
+        printf("Error: failed to read image dimensions\n");
+        exit(1);
+    }
+
+    printf("width = %d, height = %d, channels = %d\n", WIDTH, HEIGHT, CHANNELS);
+
     // 1. ALlocate host and device memory based on the batch size
 
     // 1.1 Host memory
-    unsigned char *output_images = (unsigned char *)malloc(batch_size * IMAGE_WIDTH * IMAGE_HEIGHT * sizeof(unsigned char));
+    unsigned char *output_images = (unsigned char *)malloc(batch_size * WIDTH * HEIGHT * sizeof(unsigned char));
 
     // 1.2 Device memory
     float *device_images;
     unsigned char *device_outputs;
 
-    cudaMalloc((void **)&device_images, sizeof(float) * IMAGE_WIDTH * IMAGE_HEIGHT * CHANNELS * batch_size);
-    cudaMalloc((void **)&device_outputs, sizeof(unsigned char) * IMAGE_WIDTH * IMAGE_HEIGHT * batch_size);
+    cudaMalloc((void **)&device_images, sizeof(float) * WIDTH * HEIGHT * CHANNELS * batch_size);
+    cudaMalloc((void **)&device_outputs, sizeof(unsigned char) * WIDTH * HEIGHT * batch_size);
 
     // 2. Read the mask and copy it to the contstant memory
     FILE *mask_file = fopen(mask_file_path, "r");
@@ -178,18 +190,17 @@ int main(char argc, char *argv[])
                 }
 
                 printf("width = %d, height = %d, channels = %d\n", width, height, channels);
+                assert(width == WIDTH && height == HEIGHT && channels == CHANNELS);
 
-                // normalize image
-                float *normalized_image = (float *)malloc(width * height * channels * sizeof(float));
-                for (size_t i = 0; i < width * height * channels; i++)
+                // normalize image => convert to float between 0 and 1
+                float *normalized_image = (float *)malloc(WIDTH * HEIGHT * CHANNELS * sizeof(float));
+                for (size_t i = 0; i < WIDTH * HEIGHT * CHANNELS; i++)
                 {
                     normalized_image[i] = (float)input_image[i] / 255.0f;
                 }
 
-                assert(width == IMAGE_WIDTH && height == IMAGE_HEIGHT && channels == CHANNELS);
-
                 // Copy image data from host to device
-                cudaMemcpy(device_images + batch_count * width * height * channels, normalized_image, width * height * channels * sizeof(float), cudaMemcpyHostToDevice);
+                cudaMemcpy(device_images + batch_count * WIDTH * HEIGHT * CHANNELS, normalized_image, WIDTH * HEIGHT * CHANNELS * sizeof(float), cudaMemcpyHostToDevice);
 
                 printf("IMAGE COPIED TO GPU\n");
 
@@ -200,7 +211,7 @@ int main(char argc, char *argv[])
                 if (batch_count >= batch_size)
                 {
                     printf("BATCH COUNT: %d\n", batch_count);
-                    calculateOutput(batch_size, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
+                    calculateOutput(WIDTH, HEIGHT, CHANNELS, batch_size, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
                     batch_count = 0;
                 }
             }
@@ -209,7 +220,7 @@ int main(char argc, char *argv[])
         printf("BATCH COUNT: %d\n", batch_count);
         if (batch_count != 0) // if the file_count % batch_size != 0
         {
-            calculateOutput(batch_count, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
+            calculateOutput(WIDTH, HEIGHT, CHANNELS, batch_count, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
         }
 
         // free dynamically allocated host memory
