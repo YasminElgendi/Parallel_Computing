@@ -5,40 +5,34 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <fstream>
+#include <thrust/device_vector.h>
+#include <thrust/sort.h>
 
-__global__ void kernel(float *array, float *sum, int N)
+__global__ void binarySearch(float *array, float target, int *result, int size) 
 {
+    int index = threadIdx.x;    
 
-    __shared__ float partialSum[256];
+    int start_index = 0;
+    int end_index = size - 1;
 
-    // Copy input elements to shared memory
-    int index = threadIdx.x;
-    int start = blockIdx.x * blockDim.x;
+    while (start_index <= end_index) {
+        int mid = start_index + (end_index - start_index) / 2;
 
-    if (start + index < N)
-    {
-        partialSum[index] = array[start + index];
-    }
-
-    __syncthreads();
-
-    // Reduction
-    for (int stride = 1; stride < blockDim.x; stride *= 2)
-    {
-        if (index % (2 * stride) == 0)
-        {
-            partialSum[index] += partialSum[index + stride];
+        if (array[mid] == target) {
+            *result = mid;
+            return;
         }
-        __syncthreads();
+        else if (array[mid] < target) {
+            start_index = mid + 1;
+        }
+        else {
+            end_index = mid - 1;
+        }
     }
 
-    // Write the result in global memory
-    if (index == 0)
-    {
-        sum[blockIdx.x] = partialSum[0];
-        // printf("kernel sum: %0.1f\n", *sum);
-    }
+    *result = -1; // Not found
 }
+
 
 int getSize(FILE *input)
 {
@@ -63,7 +57,7 @@ void readInput(FILE *input, float *array, int size)
 
 int main(char argc, char *argv[])
 {
-    if (argc < 2)
+    if (argc < 3)
     {
         printf("Please provide the path of the input file\n");
         return 1;
@@ -80,14 +74,17 @@ int main(char argc, char *argv[])
     }
 
     int size = getSize(inputFile);
+    float target = atof(argv[2]);
 
     // printf("Size: %d\n", size);
 
-    float *array = (float *)malloc(size * sizeof(float));
-    float *sum = (float *)malloc(sizeof(float));
+    float *array;
+    int index = -1;
 
     float *d_array;
-    float *d_sum;
+    int *d_result;
+
+    array = (float *)malloc(size * sizeof(float));
 
     readInput(inputFile, array, size);
 
@@ -98,25 +95,31 @@ int main(char argc, char *argv[])
 
     // Allocate device memory
     cudaMalloc((void **)&d_array, sizeof(float) * size);
-    cudaMalloc((void **)&d_sum, sizeof(float));
+    cudaMalloc((void **)&d_result, sizeof(int));
 
     // Transfer data from host to device memory
     cudaMemcpy(d_array, array, sizeof(float) * size, cudaMemcpyHostToDevice);
 
-    kernel<<<1, 256>>>(d_array, d_sum, size);
+    thrust::device_ptr<float> dev_ptr(d_array);
+    thrust::sort(dev_ptr, dev_ptr + size);
+    // for (int i = 0; i < size; i++)
+    // {
+    //     printf("%0.1f\n", array[i]);
+    // }
+
+    binarySearch<<<1, 256>>>(d_array, target, d_result, size);
 
     // Transfer data back to host memory
-    cudaMemcpy(sum, d_sum, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&index, d_result, sizeof(int), cudaMemcpyDeviceToHost);
 
-    // printf("Sum: %0.1f\n", *sum);
-    printf("%0.1f", *sum);
-    // 8. Deallocate device memory
+    // Result
+    printf("%d", index);
+    // Deallocate device memory
     cudaFree(d_array);
-    cudaFree(d_sum);
+    cudaFree(d_result);
 
-    // 9. Deallocate host memory
+    // Deallocate host memory
     free(array);
-    free(sum);
 
     fclose(inputFile);
 

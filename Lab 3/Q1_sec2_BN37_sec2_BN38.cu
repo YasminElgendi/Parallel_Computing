@@ -108,13 +108,14 @@ int main(char argc, char *argv[])
     // Transfer data back to host memory
     cudaMemcpy(sum, d_sum, sizeof(float), cudaMemcpyDeviceToHost);
 
-    // printf("Sum: %0.1f\n", *sum);
+    // Result
     printf("%0.1f", *sum);
-    // 8. Deallocate device memory
+    
+    // Deallocate device memory
     cudaFree(d_array);
     cudaFree(d_sum);
 
-    // 9. Deallocate host memory
+    // Deallocate host memory
     free(array);
     free(sum);
 
