@@ -12,6 +12,12 @@
 #define CHANNELS 3
 #define MAX_MASK_SIZE 10
 
+
+void getImageDimensions(char const *filepath, int *width, int *height, int *comp)
+{
+    
+}
+
 // read rgb image given the file path
 unsigned char *readImage(char const *filepath, int *width, int *height, int *comp)
 {
