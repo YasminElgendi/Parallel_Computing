@@ -9,8 +9,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <fstream>
-#include "./include/stb/stb_image_write.h"
-#include "read_data.h"
+#include "../include/stb/stb_image_write.h"
+#include "../read_data.h"
 
 __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant memory for the mask
 
