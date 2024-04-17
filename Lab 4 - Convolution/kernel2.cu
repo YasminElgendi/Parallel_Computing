@@ -18,7 +18,7 @@ __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant mem
 
 // 2. kernel2: tiling where each block matches the input tile size.
 // The size of the block matches the size of the input tile
-__global__ void kernel2(unsigned char *output_image, unsigned char *input_image, int width, int height, int comp, int mask_size, int input_tile_width)
+__global__ void kernel2(unsigned char *output_image, float *input_image, int width, int height, int comp, int mask_size, int input_tile_width)
 {
     // get the pixel index
     int out_column = blockIdx.x * OUTPUT_TILE_WIDTH + threadIdx.x;
@@ -40,11 +40,11 @@ __global__ void kernel2(unsigned char *output_image, unsigned char *input_image,
         for (int c = 0; c < comp; c++)
         {
 
-            shared_input[(threadIdx.y * input_tile_width + threadIdx.x) * comp + c] = (float)input_image[(in_row * width + in_column) * comp + c];
+            shared_input[(threadIdx.y * input_tile_width + threadIdx.x) * comp + c] = input_image[(in_row * width + in_column) * comp + c];
         }
     }
     else
-    {   
+    {
         for (int c = 0; c < comp; c++)
         {
             shared_input[(threadIdx.y * input_tile_width + threadIdx.x) * comp + c] = 0.0f;
@@ -70,6 +70,9 @@ __global__ void kernel2(unsigned char *output_image, unsigned char *input_image,
                 }
             }
         }
+        pixel_value = fminf(fmaxf(pixel_value, 0.0f), 1.0f); // clamp the pixel value to be in the range [0, 1]
+
+        pixel_value = pixel_value * 255; // scale the pixel value to be in the range [0, 255]
 
         // 3. Write the output tile to the output image
         output_image[out_row * width + out_column] = (unsigned char)pixel_value;
@@ -94,7 +97,7 @@ int main(char argc, char *argv[])
 
     // get the fulle input path of the image
     char full_input_path[256];
-    sprintf(full_input_path, "%s/%s", input_folder_path, "/image.jpg");
+    sprintf(full_input_path, "%s/%s", input_folder_path, "/tree.jpg");
 
     unsigned char *input_image = readImage(full_input_path, &width, &height, &comp);
 
@@ -105,6 +108,20 @@ int main(char argc, char *argv[])
     }
     printf("width = %d, height = %d, comp = %d (channels)\n", width, height, comp); // print image dimensions
     int N = width * height * comp;
+
+    // convert the image to float
+    float *normalized_image = (float *)malloc(width * height * comp * sizeof(float));
+    for (size_t i = 0; i < width * height * comp; i++)
+    {
+        normalized_image[i] = (float)input_image[i] / 255.0;
+        // printf("%f%s", normalized_image[i], ((i + 1) % comp) ? " " : "\n");
+    }
+
+    printf("NORMALIZED IMAGE\n");
+    for (size_t i = 0; i < NUM_PIXELS_TO_PRINT * comp; i++)
+    {
+        printf("%f%s", normalized_image[i], ((i + 1) % comp) ? " " : "\n");
+    }
 
     // Allocate memory for the output image
     unsigned char *output_image = (unsigned char *)malloc(width * height * sizeof(unsigned char));
@@ -133,17 +150,16 @@ int main(char argc, char *argv[])
     printf("OUTPUT TILE WIDTH = %d\n", OUTPUT_TILE_WIDTH);
 
     // 2. Allocate device memory
-    unsigned char *d_image, *d_out;
-    cudaMalloc((void **)&d_image, sizeof(unsigned char) * N);
+    float *d_image;
+    unsigned char *d_out;
+    cudaMalloc((void **)&d_image, sizeof(float) * N);
     cudaMalloc((void **)&d_out, sizeof(unsigned char) * width * height);
 
     // 3. Transfer data from host to device memory
-    cudaMemcpy(d_image, input_image, sizeof(unsigned char) * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_image, normalized_image, sizeof(float) * N, cudaMemcpyHostToDevice);
 
     // 4. Launch kernel
     dim3 block_dim(input_tile_width, input_tile_width);
-    // int grid_columns = (width - 1) / OUTPUT_TILE_WIDTH + 1;
-    // int grid_rows = (height - 1) / OUTPUT_TILE_WIDTH + 1;
     int grid_columns = ceil((float)width / OUTPUT_TILE_WIDTH);
     int grid_rows = ceil((float)height / OUTPUT_TILE_WIDTH);
     dim3 grid_dim(grid_columns, grid_rows);

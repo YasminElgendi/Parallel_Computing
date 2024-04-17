@@ -8,9 +8,6 @@
 #include "./include/dirent.h"
 
 #define NUM_PIXELS_TO_PRINT 10
-#define IMAGE_WIDTH 512
-#define IMAGE_HEIGHT 256
-// #define CHANNELS 3
 #define MAX_MASK_SIZE 10
 
 // read rgb image given the file path
