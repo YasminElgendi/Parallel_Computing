@@ -12,7 +12,7 @@
 #include "./include/stb/stb_image_write.h"
 #include "read_data.h"
 
-#define OUTPUT_TILE_WIDTH 16 // => 16 x 16 = 256
+#define OUTPUT_TILE_WIDTH 1 // => 16 x 16 = 256
 
 __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant memory for the mask
 
@@ -26,9 +26,11 @@ __global__ void kernel2(unsigned char *output_image, unsigned char *input_image,
 
     // printf("out_column = %d, out_row = %d\n", out_column, out_row);
 
-    // indices to access the shared memory
+    // indices to access the input image
     int in_column = out_column - mask_size / 2;
     int in_row = out_row - mask_size / 2;
+
+    // printf("in_column = %d, in_row = %d\n", in_column, in_row);
 
     // STEPS:
     // 1. Load data into shared memory
@@ -44,7 +46,7 @@ __global__ void kernel2(unsigned char *output_image, unsigned char *input_image,
         }
     }
     else
-    {
+    {   
         for (int c = 0; c < comp; c++)
         {
             shared_input[(threadIdx.y * input_tile_width + threadIdx.x) * comp + c] = 0.0f;
@@ -94,7 +96,7 @@ int main(char argc, char *argv[])
 
     // get the fulle input path of the image
     char full_input_path[256];
-    sprintf(full_input_path, "%s/%s", input_folder_path, "/images.jpeg");
+    sprintf(full_input_path, "%s/%s", input_folder_path, "/image.jpg");
 
     unsigned char *input_image = readImage(full_input_path, &width, &height, &comp);
 

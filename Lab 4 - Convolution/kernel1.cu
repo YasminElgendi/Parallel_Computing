@@ -18,7 +18,7 @@ __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant mem
 // 1. kernel1: basic implementation (no tiling) => each thread computes a single pixel in the output image
 // to compute a single pixel in the output image the thread needs to compute values for all three channels using the corresponding mask for each channel
 // each pixel reads three consecutive values from the input image
-__global__ void kernel1(unsigned char *output_image, unsigned char *input_image, int width, int height, int comp, int mask_size)
+__global__ void kernel1(unsigned char *output_image, float *input_image, int width, int height, int comp, int mask_size)
 {
     // get the pixel index
     int column = blockIdx.x * blockDim.x + threadIdx.x;
@@ -29,7 +29,7 @@ __global__ void kernel1(unsigned char *output_image, unsigned char *input_image,
     // check if the pixel is within the image boundaries
     if (column < width && row < height)
     {
-        float pixel_value = 0;
+        float pixel_value = 0.0f;
 
         // get the start of column and row for the current pixel being convulted
         int start_column = column - mask_size / 2;
@@ -48,14 +48,17 @@ __global__ void kernel1(unsigned char *output_image, unsigned char *input_image,
                     // check if the current pixel is within the image boundaries => no padding was added
                     if (current_row >= 0 && current_row < height && current_column >= 0 && current_column < width)
                     {
-                        pixel_value += (float)input_image[(current_row * width + current_column) * comp + c] * constant_mask[mask_row * mask_size + mask_column];
+                        pixel_value += input_image[(current_row * width + current_column) * comp + c] * constant_mask[mask_row * mask_size + mask_column];
                     }
                 }
             }
         }
 
-        // write the pixel value to the output image
-        output_image[row * width + column] = (unsigned char)pixel_value;
+        pixel_value = fminf(fmaxf(pixel_value, 0.0f), 1.0f); // clamp the pixel value to be in the range [0, 1]
+
+        pixel_value = pixel_value * 255; // scale the pixel value to be in the range [0, 255]
+
+        output_image[row * width + column] = (unsigned char)pixel_value; // write the pixel value to the output image
     }
 }
 
@@ -73,12 +76,39 @@ int main(char argc, char *argv[])
 
     // 1.1 Read image
     int width, height, comp;
-    unsigned char *input_image = readImage(strcat(input_folder_path, "/image.jpg"), &width, &height, &comp);
+    unsigned char *input_image = readImage(strcat(input_folder_path, "/tree.jpg"), &width, &height, &comp);
     if (!input_image)
     {
         printf("Error: failed to read image\n");
         exit(1);
     }
+
+    printf("INPUT IMAGE\n");
+    for (size_t i = 0; i < NUM_PIXELS_TO_PRINT * comp; i++)
+    {
+        printf("%d%s", input_image[i], ((i + 1) % comp) ? " " : "\n");
+    }
+
+    printf("FLOAT INPUT IMAGE\n");
+    for (size_t i = 0; i < NUM_PIXELS_TO_PRINT * comp; i++)
+    {
+        printf("%f%s", (float)input_image[i] / 255.0, ((i + 1) % comp) ? " " : "\n");
+    }
+
+    // convert the image to float
+    float *normalized_image = (float *)malloc(width * height * comp * sizeof(float));
+    for (size_t i = 0; i < width * height * comp; i++)
+    {
+        normalized_image[i] = (float)input_image[i] / 255.0;
+        // printf("%f%s", normalized_image[i], ((i + 1) % comp) ? " " : "\n");
+    }
+
+    printf("NORMALIZED IMAGE\n");
+    for (size_t i = 0; i < NUM_PIXELS_TO_PRINT * comp; i++)
+    {
+        printf("%f%s", normalized_image[i], ((i + 1) % comp) ? " " : "\n");
+    }
+
     printf("width = %d, height = %d, comp = %d (channels)\n", width, height, comp); // print image dimensions
     int N = width * height * comp;
     unsigned char *output_image = (unsigned char *)malloc(width * height * sizeof(unsigned char));
@@ -103,12 +133,13 @@ int main(char argc, char *argv[])
     cudaMemcpyToSymbol(constant_mask, mask, mask_size * mask_size * sizeof(float));
 
     // 2. Allocate device memory
-    unsigned char *d_image, *d_out;
-    cudaMalloc((void **)&d_image, sizeof(unsigned char) * N);
+    float *d_image;
+    unsigned char *d_out;
+    cudaMalloc((void **)&d_image, sizeof(float) * N);
     cudaMalloc((void **)&d_out, sizeof(unsigned char) * width * height);
 
     // 3. Transfer data from host to device memory
-    cudaMemcpy(d_image, input_image, sizeof(unsigned char) * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_image, normalized_image, sizeof(float) * N, cudaMemcpyHostToDevice);
 
     // 4. Launch kernel
     dim3 block_dim(16, 16);

@@ -18,11 +18,6 @@ unsigned char *readImage(char const *filepath, int *width, int *height, int *com
     unsigned char *data = stbi_load(filepath, width, height, comp, 0);
     if (*data)
     {
-        // for (size_t i = 0; i < NUM_PIXELS_TO_PRINT * (*comp); i++)
-        // {
-        //     printf("%d%s", data[i], ((i + 1) % (*comp)) ? " " : "\n");
-        // }
-        // printf("\n");
         return data;
     }
     return NULL;
