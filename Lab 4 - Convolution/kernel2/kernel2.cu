@@ -30,8 +30,6 @@ __global__ void kernel2(unsigned char *output_image, unsigned char *input_image,
     int in_column = out_column - mask_size / 2;
     int in_row = out_row - mask_size / 2;
 
-    // printf("in_column = %d, in_row = %d\n", in_column, in_row);
-
     // STEPS:
     // 1. Load data into shared memory
     // each thread will load 3 values corresponding to the three channels
