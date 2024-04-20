@@ -2,3 +2,6 @@
 **.exp
 **.lib
 */output/*
+*/input/*
+*/input_small/*
+*/input_large/*

@@ -13,12 +13,13 @@
 #include "./include/stb/stb_image_write.h"
 #include "read_data.h"
 
+__constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant memory for the mask
 
 // Carry out a 3D convolution over RGB images and save the output ones
 // 1. kernel1: basic implementation (no tiling) => each thread computes a single pixel in the output image
 // to compute a single pixel in the output image the thread needs to compute values for all three channels using the corresponding mask for each channel
 // each pixel reads three consecutive values from the input image
-__global__ void kernel1_batch(unsigned char *output_images, float *input_images, float *mask, int width, int height, int comp, int mask_size, int batch_size)
+__global__ void kernel1_batch_cm(unsigned char *output_images, float *input_images, int width, int height, int comp, int mask_size, int batch_size)
 {
     // get the pixel index
     int column = blockIdx.x * blockDim.x + threadIdx.x;
@@ -47,7 +48,7 @@ __global__ void kernel1_batch(unsigned char *output_images, float *input_images,
                     // check if the current pixel is within the image boundaries => no padding was added
                     if (current_row >= 0 && current_row < height && current_column >= 0 && current_column < width)
                     {
-                        pixel_value += input_images[(width * height * depth + current_row * width + current_column) * comp + c] * mask[mask_row * mask_size + mask_column];
+                        pixel_value += input_images[(width * height * depth + current_row * width + current_column) * comp + c] * constant_mask[mask_row * mask_size + mask_column];
                     }
                 }
             }
@@ -67,7 +68,7 @@ __global__ void kernel1_batch(unsigned char *output_images, float *input_images,
 // Calls the kernel to calculate the output images
 // Transfers the output images from device to host
 // Saves the output images
-void calculateOutput(int width, int height, int channels, int depth, unsigned char *output_images, unsigned char *device_outputs, float *device_images, float *device_mask, int mask_size, char *output_folder_path, char **output_image_filenames)
+void calculateOutput(int width, int height, int channels, int depth, unsigned char *output_images, unsigned char *device_outputs, float *device_images, int mask_size, char *output_folder_path, char **output_image_filenames)
 {
     // calculate the block and grid size
     dim3 block_dim(16, 16);
@@ -76,7 +77,7 @@ void calculateOutput(int width, int height, int channels, int depth, unsigned ch
     dim3 grid_dim(grid_columns, grid_rows, depth);
 
     // call the kernel on the batch of images read
-    kernel1_batch<<<grid_dim, block_dim>>>(device_outputs, device_images, device_mask, width, height, channels, mask_size, depth);
+    kernel1_batch_cm<<<grid_dim, block_dim>>>(device_outputs, device_images, width, height, channels, mask_size, depth);
 
     // transfer the output images from device to host
     cudaMemcpy(output_images, device_outputs, width * height * depth * sizeof(unsigned char), cudaMemcpyDeviceToHost);
@@ -151,10 +152,7 @@ int main(char argc, char *argv[])
     printMask(mask, mask_size);                                           // print mask elements
 
     // Copy Filter to constant memory
-    // cudaMemcpyToSymbol(constant_mask, mask, mask_size * mask_size * sizeof(float));
-
-    float *device_mask;
-    cudaMalloc((void **)&device_mask, sizeof(float) * mask_size * mask_size);
+    cudaMemcpyToSymbol(constant_mask, mask, mask_size * mask_size * sizeof(float));
 
     // 3. Read images as batches from the input folder
     DIR *input_directory;
@@ -211,7 +209,7 @@ int main(char argc, char *argv[])
                 if (batch_count >= batch_size)
                 {
                     printf("BATCH COUNT: %d\n", batch_count);
-                    calculateOutput(WIDTH, HEIGHT, CHANNELS, batch_size, output_images, device_outputs, device_images, device_mask, mask_size, output_folder_path, output_image_filenames);
+                    calculateOutput(WIDTH, HEIGHT, CHANNELS, batch_size, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
                     batch_count = 0;
                 }
             }
@@ -220,7 +218,7 @@ int main(char argc, char *argv[])
         printf("BATCH COUNT: %d\n", batch_count);
         if (batch_count != 0) // if the file_count % batch_size != 0
         {
-            calculateOutput(WIDTH, HEIGHT, CHANNELS, batch_count, output_images, device_outputs, device_images, device_mask, mask_size, output_folder_path, output_image_filenames);
+            calculateOutput(WIDTH, HEIGHT, CHANNELS, batch_count, output_images, device_outputs, device_images, mask_size, output_folder_path, output_image_filenames);
         }
 
         // free dynamically allocated host memory
@@ -231,7 +229,6 @@ int main(char argc, char *argv[])
         // free device memory
         cudaFree(device_images);
         cudaFree(device_outputs);
-        cudaFree(device_mask);
 
         // close the opened folders and files
         fclose(mask_file);
