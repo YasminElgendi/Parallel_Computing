@@ -294,6 +294,7 @@ int main(char argc, char *argv[])
         // free device memory
         cudaFree(device_images);
         cudaFree(device_outputs);
+        cudaFree(constant_mask);
 
         // close the opened folders and files
         fclose(mask_file);
