@@ -21,12 +21,10 @@ __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant mem
 // The size of the block matches the size of the input tile
 __global__ void kernel3_batch(unsigned char *output_images, float *input_images, int width, int height, int comp, int mask_size, int batch_size, int input_tile_width)
 {
-    // get the pixel index
+    // get the pixel index in the output image
     int out_column = blockIdx.x * OUTPUT_TILE_WIDTH + threadIdx.x;
     int out_row = blockIdx.y * OUTPUT_TILE_WIDTH + threadIdx.y;
     int depth = blockIdx.z * blockDim.z + threadIdx.z;
-
-    // printf("out_column = %d, out_row = %d\n", out_column, out_row);
 
     // indices to access the shared memory
     int in_column = out_column - mask_size / 2;
@@ -36,6 +34,7 @@ __global__ void kernel3_batch(unsigned char *output_images, float *input_images,
     int start_block_column = blockIdx.x * OUTPUT_TILE_WIDTH - mask_size / 2;
     int start_block_row = blockIdx.y * OUTPUT_TILE_WIDTH - mask_size / 2;
 
+    // the number of elements that each thread should load
     int elements_per_thread = ((input_tile_width * input_tile_width) / (OUTPUT_TILE_WIDTH * OUTPUT_TILE_WIDTH)) + 1;
 
     // STEPS:
@@ -46,86 +45,50 @@ __global__ void kernel3_batch(unsigned char *output_images, float *input_images,
 
     if (depth < batch_size)
     {
-        // for (int c = 0; c < comp; c++)
-        // {
-        //     for (int i = threadIdx.x; i < input_tile_width; i++)
-        //     {
-        //         for (int j = threadIdx.y; j < input_tile_width; j++)
-        //         {
-        //             if ((in_column + i) >= 0 && (in_column + i) < width && (in_row + j) >= 0 && (in_row + j) < height)
-        //             {
-        //                 shared_input[(j * input_tile_width + i) * comp + c] = input_images[(width * height * depth + (in_row + j) * width + (in_column + i)) * comp + c];
-        //             }
-        //             else
-        //             {
-        //                 shared_input[(j * input_tile_width + i) * comp + c] = 0.0f;
-        //             }
-        //         }
-        //     }
-        // }
         int stride = OUTPUT_TILE_WIDTH * OUTPUT_TILE_WIDTH;
 
         for (int i = 0; i < elements_per_thread; i++) // for each thread iterate ove the elements that it should load => same element in eaxg row in the inpyt tile
         {
-            // printf("i = %d\n", i);
             // the thread index with respect to the rest of the threads
             // if the output tile is 3x3 => 9 threads
             // the thread_index should go from 0-8
             int thread_index = threadIdx.y * OUTPUT_TILE_WIDTH + threadIdx.x;
 
-            // printf("thread_index = %d\n", thread_index);
-
             // since a single thread loads more than one input element
             // the step is the difference between elements for which a single thread loads its in
             int thread_index_step = thread_index + (i * stride);
-
-            // printf("i*stride = %d\n", i * stride);
-            // printf("thread_index_step = %d\n", thread_index_step);
 
             // get the indices of the the thread with respect to the input tile
             // if a thread is number 8 and the input tile is 5x5 => then the thread loads into the cell 1,3 in the shared memory
             int shm_index_row = thread_index_step / input_tile_width;
             int shm_index_col = thread_index_step - (shm_index_row * input_tile_width);
 
-            // printf("shm_index_row = %d, shm_index_col = %d\n", shm_index_row, shm_index_col);
-
-            // printf("thread_index = %d, thread_index_step = %d, shm_index_row = %d, shm_index_col = %d\n", thread_index, thread_index_step, shm_index_row, shm_index_col);
-
-            // get the index of the thread with respect to the input image
-            // use the in_column and in_row => wrong
-            // use the shared memory indices
-
             if (shm_index_col >= 0 && shm_index_col < input_tile_width && shm_index_row >= 0 && shm_index_row < input_tile_width)
             {
+
+                // get the index of the thread with respect to the input image
+                // use the in_column and in_row => wrong
+                // use the shared memory indices
                 int input_index_col = start_block_column + shm_index_col;
                 int input_index_row = start_block_row + shm_index_row;
 
                 if (input_index_col >= 0 && input_index_col < width && input_index_row >= 0 && input_index_row < height)
                 {
-                    // printf("in_column + shm_index_col = %d, in_row + shm_index_row = %d\n", in_column + shm_index_col, in_row + shm_index_row);
-                    // printf("shm_index_col = %d, shm_index_row = %d\n", shm_index_col, shm_index_row);
-                    for (int c = 0; c < comp; c++)
+                    for (int c = 0; c < comp; c++) // this does not support memory coalescing
                     {
-                        // printf("c = %d\n", (shm_index_row * input_tile_width + shm_index_col) * comp + c);
-                        // printf("shm[%d] = %f\n", (shm_index_row * input_tile_width + shm_index_col) * comp + c, input_image[((in_row + shm_index_row) * width + (in_column + shm_index_col)) * comp + c]);
-                        if (blockIdx.x == 0 && blockIdx.y == 0)
-                        {
-                            // printf("in_column = %d, in_row = %d\n", in_column, in_row );
-                            // printf("NORMAL CELL: in_column = %d, in_row = %d, shm_col = %d, shm_row = %d ,shm[%d] = %f, thread_index = %d\n", in_column, in_row, shm_index_col, shm_index_row, (shm_index_row * input_tile_width + shm_index_col) * comp + c, input_image[((start_block_row + shm_index_row) * width + (start_block_column + shm_index_col)) * comp + c], thread_index);
-                        }
+                        // Load the pixel value from the input image into the shared memory if the image is in bounds
                         shared_input[(shm_index_row * input_tile_width + shm_index_col) * comp + c] = input_images[(width * height * depth + input_index_row * width + input_index_col) * comp + c];
                     }
                 }
                 else
                 {
+                    // this does not support memory coalescing
+                    // since the image is saved to memory where each pixel is saved in three consecutive cells
+                    // we want the threads to load consecutive cells
+                    // if I have 3 threads and three pixels => thread 0 loads first channel of each pixel, thread 1 loads the second channel of each pixel, thread 2 loads the third channel of each pixel => ezay ba2a
                     for (int c = 0; c < comp; c++)
                     {
-                        // printf("c = %d\n", (shm_index_row * input_tile_width + shm_index_col) * comp + c);
-                        if (blockIdx.x == 0 && blockIdx.y == 0)
-                        {
-                            // printf("GHOST CELL: in_column = %d, in_row = %d ,shm[%d] = %f\n", in_column, in_row, (shm_index_row * input_tile_width + shm_index_col) * comp + c, 0.0f);
-                        }
-
+                        // Insert a 0 if the index is out of bounds => ghost cells
                         shared_input[(shm_index_row * input_tile_width + shm_index_col) * comp + c] = 0.0f;
                     }
                 }

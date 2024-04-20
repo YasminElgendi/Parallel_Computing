@@ -26,8 +26,6 @@ __global__ void kernel1_batch(unsigned char *output_images, float *input_images,
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int depth = blockIdx.z * blockDim.z + threadIdx.z;
 
-    // printf("column = %d, row = %d\n", column, row);
-
     // check if the pixel is within the image boundaries
     if (column < width && row < height && depth < batch_size)
     {
@@ -89,7 +87,7 @@ void calculateOutput(int width, int height, int channels, int depth, unsigned ch
     // Get full output path
     char full_output_path[256];
 
-    // save images
+    // save images to output folder
     for (int i = 0; i < depth; i++)
     {
         sprintf(full_output_path, "%s/%s", output_folder_path, output_image_filenames[i]);

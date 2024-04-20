@@ -24,26 +24,11 @@ __global__ void kernel3(unsigned char *output_image, float *input_image, int wid
     int out_column = blockIdx.x * OUTPUT_TILE_WIDTH + threadIdx.x;
     int out_row = blockIdx.y * OUTPUT_TILE_WIDTH + threadIdx.y;
 
-    // printf("blockIdx.x = %d, blockIdx.y = %d\n", blockIdx.x, blockIdx.y);
-    // printf("threadIdx.x = %d, threadIdx.y = %d\n", threadIdx.x, threadIdx.y);
-
-    // printf("out_column = %d, out_row = %d\n", out_column, out_row);
-
-    // indices to access the shared memory
-    // This only works if each thread is loading one pixel from the input image into thae shared memory
-    // We need another way to access the input image
-    // use for boundary conditions
-    int in_column = out_column - mask_size / 2;
-    int in_row = out_row - mask_size / 2;
-
     // Indices that are used to access the input image
     int start_block_column = blockIdx.x * OUTPUT_TILE_WIDTH - mask_size / 2;
     int start_block_row = blockIdx.y * OUTPUT_TILE_WIDTH - mask_size / 2;
 
-    // printf("in_column = %d, in_row = %d\n", in_column, in_row);
-
     int elements_per_thread = ((input_tile_width * input_tile_width) / (OUTPUT_TILE_WIDTH * OUTPUT_TILE_WIDTH)) + 1;
-    // printf("elements_per_thread = %d\n", elements_per_thread);
 
     // STEPS:
     // 1. Load data into shared memory
@@ -51,30 +36,6 @@ __global__ void kernel3(unsigned char *output_image, float *input_image, int wid
     // each thread will load 3 values corresponding to the three channels
     extern __shared__ float shared_input[]; // Example: Allocate the input tile size of shared memory
 
-    // for (int c = 0; c < comp; c++)
-    // {
-    // for (int i = threadIdx.x; i < input_tile_width; i++)
-    // {
-    //     for (int j = threadIdx.y; j < input_tile_width; j++)
-    //     {
-    //         if ((in_column + i) >= 0 && (in_column + i) < width && (in_row + j) >= 0 && (in_row + j) < height)
-    //         {
-    //             for (int c = 0; c < comp; c++)
-    //             {
-    //                 shared_input[(j * input_tile_width + i) * comp + c] = input_image[((in_row + j) * width + (in_column + i)) * comp + c];
-    //             }
-    //         }
-    //         else
-    //         {
-    //             for (int c = 0; c < comp; c++)
-    //             {
-
-    //                 shared_input[(j * input_tile_width + i) * comp + c] = 0.0f;
-    //             }
-    //         }
-    //     }
-    // }
-    // }
     int stride = OUTPUT_TILE_WIDTH * OUTPUT_TILE_WIDTH;
     for (int i = 0; i < elements_per_thread; i++) // for each thread iterate ove the elements that it should load => same element in eaxg row in the inpyt tile
     {
@@ -84,46 +45,27 @@ __global__ void kernel3(unsigned char *output_image, float *input_image, int wid
         // the thread_index should go from 0-8
         int thread_index = threadIdx.y * OUTPUT_TILE_WIDTH + threadIdx.x;
 
-        // printf("thread_index = %d\n", thread_index);
-
         // since a single thread loads more than one input element
         // the step is the difference between elements for which a single thread loads its in
         int thread_index_step = thread_index + (i * stride);
-
-        // printf("i*stride = %d\n", i * stride);
-        // printf("thread_index_step = %d\n", thread_index_step);
 
         // get the indices of the the thread with respect to the input tile
         // if a thread is number 8 and the input tile is 5x5 => then the thread loads into the cell 1,3 in the shared memory
         int shm_index_row = thread_index_step / input_tile_width;
         int shm_index_col = thread_index_step - (shm_index_row * input_tile_width);
 
-        // printf("shm_index_row = %d, shm_index_col = %d\n", shm_index_row, shm_index_col);
-
-        // printf("thread_index = %d, thread_index_step = %d, shm_index_row = %d, shm_index_col = %d\n", thread_index, thread_index_step, shm_index_row, shm_index_col);
-
-        // get the index of the thread with respect to the input image
-        // use the in_column and in_row => wrong
-        // use the shared memory indices
-
         if (shm_index_col >= 0 && shm_index_col < input_tile_width && shm_index_row >= 0 && shm_index_row < input_tile_width)
         {
+            // get the index of the thread with respect to the input image
+            // use the in_column and in_row => wrong
+            // use the shared memory indices
             int input_index_col = start_block_column + shm_index_col;
             int input_index_row = start_block_row + shm_index_row;
 
             if (input_index_col >= 0 && input_index_col < width && input_index_row >= 0 && input_index_row < height)
             {
-                // printf("in_column + shm_index_col = %d, in_row + shm_index_row = %d\n", in_column + shm_index_col, in_row + shm_index_row);
-                // printf("shm_index_col = %d, shm_index_row = %d\n", shm_index_col, shm_index_row);
                 for (int c = 0; c < comp; c++)
                 {
-                    // printf("c = %d\n", (shm_index_row * input_tile_width + shm_index_col) * comp + c);
-                    // printf("shm[%d] = %f\n", (shm_index_row * input_tile_width + shm_index_col) * comp + c, input_image[((in_row + shm_index_row) * width + (in_column + shm_index_col)) * comp + c]);
-                    if (blockIdx.x == 0 && blockIdx.y == 0)
-                    {
-                        // printf("in_column = %d, in_row = %d\n", in_column, in_row );
-                        printf("NORMAL CELL: in_column = %d, in_row = %d, shm_col = %d, shm_row = %d ,shm[%d] = %f, thread_index = %d\n", in_column, in_row, shm_index_col, shm_index_row, (shm_index_row * input_tile_width + shm_index_col) * comp + c, input_image[((start_block_row + shm_index_row) * width + (start_block_column + shm_index_col)) * comp + c], thread_index);
-                    }
                     shared_input[(shm_index_row * input_tile_width + shm_index_col) * comp + c] = input_image[(input_index_row * width + input_index_col) * comp + c];
                 }
             }
@@ -131,12 +73,6 @@ __global__ void kernel3(unsigned char *output_image, float *input_image, int wid
             {
                 for (int c = 0; c < comp; c++)
                 {
-                    // printf("c = %d\n", (shm_index_row * input_tile_width + shm_index_col) * comp + c);
-                    if (blockIdx.x == 0 && blockIdx.y == 0)
-                    {
-                        printf("GHOST CELL: in_column = %d, in_row = %d ,shm[%d] = %f\n", in_column, in_row, (shm_index_row * input_tile_width + shm_index_col) * comp + c, 0.0f);
-                    }
-
                     shared_input[(shm_index_row * input_tile_width + shm_index_col) * comp + c] = 0.0f;
                 }
             }
