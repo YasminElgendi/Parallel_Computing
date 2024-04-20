@@ -179,6 +179,7 @@ int main(char argc, char *argv[])
     // free host memory
     free(mask);
     free(input_image);
+    free(normalized_image);
     free(output_image);
 
     // free device memory

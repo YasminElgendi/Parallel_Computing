@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "*.ejs": "html",
-        "xlocale": "cpp"
+        "xlocale": "cpp",
+        "xhash": "cpp"
     }
 }

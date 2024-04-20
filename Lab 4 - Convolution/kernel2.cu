@@ -12,7 +12,7 @@
 #include "./include/stb/stb_image_write.h"
 #include "read_data.h"
 
-#define OUTPUT_TILE_WIDTH 1 // => 16 x 16 = 256
+#define OUTPUT_TILE_WIDTH 16 // => 16 x 16 = 256
 
 __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant memory for the mask
 
@@ -198,6 +198,7 @@ int main(char argc, char *argv[])
     // free host memory
     free(mask);
     free(input_image);
+    free(normalized_image);
     free(output_image);
 
     // free device memory
