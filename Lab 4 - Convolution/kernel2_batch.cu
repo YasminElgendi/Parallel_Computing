@@ -13,7 +13,7 @@
 #include "./include/stb/stb_image_write.h"
 #include "read_data.h"
 
-#define OUTPUT_TILE_WIDTH 16 // => 16 x 16 = 256
+#define OUTPUT_TILE_WIDTH 8 // => 16 x 16 = 256
 
 __constant__ float constant_mask[MAX_MASK_SIZE * MAX_MASK_SIZE]; // constant memory for the mask
 // 2. kernel2: tiling where each block matches the input tile size.
