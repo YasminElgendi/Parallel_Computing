@@ -2,6 +2,7 @@
     "files.associations": {
         "*.ejs": "html",
         "xlocale": "cpp",
-        "xhash": "cpp"
+        "xhash": "cpp",
+        "vector": "cpp"
     }
 }

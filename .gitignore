@@ -1,8 +1,14 @@
 **.exe
 **.exp
 **.lib
-*/output/*
+*/output/kernel1
+*/output/kernel2
+*/output/kernel3
+*/output/EC/*
+*/output/VC/*
+*/output/kernel3
 */input/*
 */input_small/*
 */input_large/*
 */input_docker/*
+*/graphs/*

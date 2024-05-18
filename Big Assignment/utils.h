@@ -1,6 +1,7 @@
 #include <stdio.h>
+#include <corecrt_malloc.h>
 
-//Read graph from file of format: n is number of vertices, m is number of edges
+// Read graph from file of format: n is number of vertices, m is number of edges
 // n m
 // u1 v1 w1
 // u2 v2 w2
