@@ -1,0 +1,32 @@
+# Compiler
+NVCC = nvcc
+NVCCFLAGS = -O2 -arch=sm_60
+
+# Executable names
+EXEC_VCHYBRID = vchybridk
+EXEC_FILENAME = filename
+
+# Source files
+SRC_VCHYBRID = vertex_centric_hybrid.cu
+SRC_FILENAME = filename.cu
+
+# Default target
+all: $(EXEC_VCHYBRID) $(EXEC_FILENAME)
+
+# Rule for vchybridk program
+$(EXEC_VCHYBRID): $(SRC_VCHYBRID)
+	$(NVCC) $(NVCCFLAGS) $< -o $@
+
+# Rule for filename program
+$(EXEC_FILENAME): $(SRC_FILENAME)
+	$(NVCC) $(NVCCFLAGS) $< -o $@
+
+# Clean up build files
+clean:
+	rm -f $(EXEC_VCHYBRID) $(EXEC_FILENAME)
+
+# Run the filename program
+run: $(EXEC_FILENAME)
+	./$(EXEC_FILENAME) input_graph_path output_graph_path source_vertex
+
+.PHONY: all clean run
