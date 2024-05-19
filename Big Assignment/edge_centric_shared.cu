@@ -20,40 +20,26 @@
 
 __global__ void edge_centric_bfs(int *src, int *dst, int *level, int currentLevel, int edges, int *vertexVisited)
 {
-    unsigned int edge = blockIdx.x * blockDim.x + threadIdx.x; // each thread is assigned an edge (element in the array)
+    unsigned int tidx = threadIdx.x;
+    unsigned int edge = blockIdx.x * blockDim.x + tidx; // each thread is assigned an edge (element in the array)
+    extern __shared__ int sharedLevel[];
 
-    if (edge < edges)
-    {
+    if (threadIdx.x < edges) {
+        sharedLevel[tidx] = level[tidx];
+    }
+    __syncthreads();
+
+    if (edge < edges) {
         unsigned int sourceVertex = src[edge];
         unsigned int destinationVertex = dst[edge];
 
-        // printf("Current Level: %d, Edge: %d, Source: %d, Destination: %d, Level[%d]: %d, Level[%d]: %d  \n", currentLevel, edge, sourceVertex, destinationVertex, sourceVertex, level[sourceVertex], destinationVertex, level[destinationVertex]);
-
-        if(level[sourceVertex] == currentLevel - 1 && level[destinationVertex] == -1)
-        {
-            level[destinationVertex] = currentLevel;
+        if (sharedLevel[sourceVertex] == currentLevel - 1 && sharedLevel[destinationVertex] == -1) {
+            sharedLevel[destinationVertex] = currentLevel;
             *vertexVisited = 1;
         }
     }
 }
 
-__host__ void cpu_edge_centric_bfs(int *src, int *dst, int *level, int currentLevel, int edges, int *vertexVisited)
-{
-
-    for (int edge = 0; edge < edges; edge++) 
-    {
-        unsigned int sourceVertex = src[edge];
-        unsigned int destinationVertex = dst[edge];
-
-        // printf("Current Level: %d, Edge: %d, Source: %d, Destination: %d, Level[%d]: %d, Level[%d]: %d  \n", currentLevel, edge, sourceVertex, destinationVertex, sourceVertex, level[sourceVertex], destinationVertex, level[destinationVertex]);
-
-        if(level[sourceVertex] == currentLevel - 1 && level[destinationVertex] == -1)
-        {
-            level[destinationVertex] = currentLevel;
-            *vertexVisited = 1;
-        }
-    }
-}
 
 int main(char argc, char *argv[])
 {
@@ -99,8 +85,9 @@ int main(char argc, char *argv[])
             level[i] = -1;
     }
 
-    // Create a graph using the COO representation
-    // Construct the graph using the COO representation
+    // Create a graph using the CSR representation
+
+    // Construct the graph using the CSR representation
     COOGraph(inputFile, src, dst, edges);
 
     // printGraph(src, dst, edges, vertices, 0);
@@ -145,7 +132,7 @@ int main(char argc, char *argv[])
     // printf("Launching Kernel\n");
     // 5. Launch the kernel
     timer.start();
-
+    unsigned int sharedMemorySize = threadsPerBlock * sizeof(int);
     while (vertexVisited)
     {
         vertexVisited = 0;
@@ -154,7 +141,8 @@ int main(char argc, char *argv[])
         // kernel processes each level
         // the kernel will be called for each level in the graph
         // global synchronisation across different levels
-        edge_centric_bfs<<<blocksPerGrid, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, edges, deviceVertexVisited);
+    
+        edge_centric_bfs<<<blocksPerGrid, threadsPerBlock, sharedMemorySize>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, edges, deviceVertexVisited);
 
         cudaMemcpy(&vertexVisited, deviceVertexVisited, sizeof(unsigned int), cudaMemcpyDeviceToHost); // copy the vertexVisited back to the host after the kernel has finished to check whether any vertex has been visited if not the max depth reached
         currentLevel++;

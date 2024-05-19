@@ -40,7 +40,7 @@ __global__ void kernel2(unsigned char *output_image, float *input_image, int wid
         for (int c = 0; c < comp; c++)
         {
 
-            shared_input[(threadIdx.y * input_tile_width + threadIdx.x) * comp + c] = input_image[(in_row * width + in_column) * comp + c];
+                [(threadIdx.y * input_tile_width + threadIdx.x) * comp + c] = input_image[(in_row * width + in_column) * comp + c];
         }
     }
     else

@@ -37,23 +37,6 @@ __global__ void edge_centric_bfs(int *src, int *dst, int *level, int currentLeve
     }
 }
 
-__host__ void cpu_edge_centric_bfs(int *src, int *dst, int *level, int currentLevel, int edges, int *vertexVisited)
-{
-
-    for (int edge = 0; edge < edges; edge++) 
-    {
-        unsigned int sourceVertex = src[edge];
-        unsigned int destinationVertex = dst[edge];
-
-        // printf("Current Level: %d, Edge: %d, Source: %d, Destination: %d, Level[%d]: %d, Level[%d]: %d  \n", currentLevel, edge, sourceVertex, destinationVertex, sourceVertex, level[sourceVertex], destinationVertex, level[destinationVertex]);
-
-        if(level[sourceVertex] == currentLevel - 1 && level[destinationVertex] == -1)
-        {
-            level[destinationVertex] = currentLevel;
-            *vertexVisited = 1;
-        }
-    }
-}
 
 int main(char argc, char *argv[])
 {

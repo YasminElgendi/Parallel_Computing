@@ -1,0 +1,14 @@
+Time taken to allocate device memory: 1165.947000 ms
+Time taken to copy memory to the device: 0.119000 ms
+
+Kernel Time: 51.472100 ms
+Time taken to deallocate device memory: 0.807700 ms
+Total GPU time: 1218.345800 ms
+
+--------
+
+Time taken to allocate device memory: 1245.674800 ms
+Time taken to copy memory to the device: 0.952000 ms
+Kernel Time: 46.497500 ms
+Time taken to deallocate device memory: 0.370200 ms
+Total GPU time: 1293.494500 ms

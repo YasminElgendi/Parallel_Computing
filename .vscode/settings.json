@@ -3,6 +3,7 @@
         "*.ejs": "html",
         "xlocale": "cpp",
         "xhash": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "fstream": "cpp"
     }
 }
