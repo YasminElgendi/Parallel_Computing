@@ -1,6 +1,7 @@
 import sys
 import random
 import networkx as nx
+from tqdm import tqdm
 
 
 def main():
@@ -26,13 +27,14 @@ def main():
     # Create a spanning tree
     nodes = list(range(num_of_vertices))
     random.shuffle(nodes)
-
-    for i in range(num_of_vertices - 1):
+    
+    for i in tqdm(range(num_of_vertices - 1)):
         u = nodes[i]
         v = nodes[i + 1]
         graph.add_edge(u, v)
 
     # Add additional random edges until reaching the desired number of edges
+    # tbar = tqdm(range(graph.number_of_edges()))
     while graph.number_of_edges() < num_of_edges:
         u = random.randint(0, num_of_vertices - 1)
         v = random.randint(0, num_of_vertices - 1)

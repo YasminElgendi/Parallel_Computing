@@ -153,7 +153,7 @@ int main(char argc, char *argv[])
 
     // 3. Copy memory to the device
     timer.start();
-    cudaMemcpy(deviceSrc, srcPtrs, vertices * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceSrc, srcPtrs, (vertices + 1) * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(deviceDst, dst, edges * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(deviceLevel, level, vertices * sizeof(int), cudaMemcpyHostToDevice);
     timer.stop();

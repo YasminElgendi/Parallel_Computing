@@ -95,12 +95,12 @@ void COOGraph(FILE *file, int *src, int *dst, int edges)
 // The rowPtr is the size of the vertices (source)
 // The colIndices is the size of the edges
 // vertex = row
-void CSRGraph(FILE *file, int *srcPtrs, int *dst, int edges)
+void CSRGraph(FILE *file, unsigned int *srcPtrs, unsigned int *dst, int edges)
 {
     int currVertex;
     int srcIndex = 0;
     int prevVertex;
-    for (int i = 0; i < edges; i++)
+    for (unsigned int i = 0; i < edges; i++)
     {
         fscanf(file, "%d", &currVertex);
         if (i == 0)

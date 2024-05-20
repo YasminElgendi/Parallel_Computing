@@ -30,49 +30,38 @@
 
 // For later use: cudaDeviceSynchronize() => Waits for all kernels in all streams on a CUDA device to complete.
 
-__global__ void vertex_centric_push_bfs(int *srcPtrs, int *dst, int *level, int currentLevel, int vertices, int edges, int *vertexVisited)
+__global__ void vertex_centric_push_bfs(unsigned int *srcPtrs, unsigned int *dst, unsigned int *level, int currentLevel, int vertices, int edges, unsigned int *vertexVisited)
 {
     // each thread is assigned a vertex
     // since this is considered a 1-D array we will use the the x index to get the vertex for each thread
     // following the basis of a vector addition
-    int vertex = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int vertex = blockIdx.x * blockDim.x + threadIdx.x;
 
     // boundary conditions
     // check if the vertex is inside the graph
     if (vertex < vertices)
     {
-        // printf("Vertex: %d, Level[%d]: %d, Current Level: %d\n", vertex, vertex, level[vertex], currentLevel);
         if (level[vertex] == currentLevel - 1) // then loop on all neighbours of the vertex
         {
-            // printf("Vertex: %d, Vertex Visited: %d\n", vertex, *vertexVisited);
             // get the starting and ending index of the edges of the vertex
             // the srcPtrs contain the starting index of the edges of the vertex for each row (vertex)
-            int start = srcPtrs[vertex];
-            int end = srcPtrs[vertex + 1];
-
-            // printf("Vertex: %d, Start: %d, End: %d\n", vertex, start, end);
+            unsigned int start = srcPtrs[vertex];
+            unsigned int end = srcPtrs[vertex + 1];
 
             // iterate over the neighbours of the vertex
-            for (int i = start; i < end; i++)
+            for (unsigned int i = start; i < end; i++)
             {
-                int neighbour = dst[i];
+                unsigned int neighbour = dst[i];
+
                 // check if the neighbour has not been visited
-                if (level[neighbour] == -1)
+                if (level[neighbour] == UINT_MAX)
                 {
-                    // printf("Vertex: %d, Neighbour: %d, Level[%d]: %d, Current Level: %d\n", vertex, neighbour, neighbour, level[neighbour], currentLevel);
                     level[neighbour] = currentLevel;
                     *vertexVisited = 1;
-                    // printf("Vertex: %d, Neighbour: %d, Level[%d]: %d, Current Level: %d\n", vertex, neighbour, neighbour, level[neighbour], currentLevel);
-                    // printf("Vertex: %d, Vertex Visited: %d\n", vertex, *vertexVisited);
                 }
             }
-            // printf("Vertex: %d, Vertex Visited: %d\n", vertex, *vertexVisited);
         }
     }
-}
-
-__host__ void cpu_bfs(int *srcPtrs, int *dst, int *level, int vertices, int edges)
-{
 }
 
 int main(char argc, char *argv[])
@@ -104,13 +93,10 @@ int main(char argc, char *argv[])
     // Read the number of vertices and edges
     fscanf(inputFile, "%d %d", &vertices, &edges);
 
-    int *srcPtrs = (int *)malloc((vertices + 1) * sizeof(int)); // allocate with the actual number of source vertices => directed graph
-    int *dst = (int *)malloc(edges * sizeof(int));
-    int *level = (int *)malloc(vertices * sizeof(int));
-    int *srcNames = (int *)malloc((vertices + 1) * sizeof(int));
-    // unsigned int *vertexVisited = (unsigned int *)malloc(sizeof(unsigned int));
-
-    // printf("Host memory allocated successfully\n");
+    unsigned int *srcPtrs = (unsigned int *)malloc((vertices + 1) * sizeof(unsigned int)); // allocate with the actual number of source vertices => directed graph
+    unsigned int *dst = (unsigned int *)malloc(edges * sizeof(unsigned int));
+    unsigned int *level = (unsigned int *)malloc(vertices * sizeof(unsigned int));
+    unsigned int *srcNames = (unsigned int *)malloc((vertices + 1) * sizeof(unsigned int));
 
     // Initialize the level of each vertex to -1
     // and the source vertex to 0
@@ -119,7 +105,7 @@ int main(char argc, char *argv[])
         if (i == srcVertex)
             level[i] = 0;
         else
-            level[i] = -1;
+            level[i] = UINT_MAX;
     }
 
     // Construct the graph using the CSR representation
@@ -127,15 +113,15 @@ int main(char argc, char *argv[])
 
     // 2. Allocate device memory for the graph
     timer.start();
-    int *deviceSrc;
-    int *deviceDst;
-    int *deviceLevel;
-    int *deviceVertexVisited;
+    unsigned int *deviceSrc;
+    unsigned int *deviceDst;
+    unsigned int *deviceLevel;
+    unsigned int *deviceVertexVisited;
 
-    cudaMalloc((void **)&deviceSrc, (vertices + 1) * sizeof(int));
-    cudaMalloc((void **)&deviceDst, edges * sizeof(int));
-    cudaMalloc((void **)&deviceLevel, vertices * sizeof(int));
-    cudaMalloc((void **)&deviceVertexVisited, sizeof(int));
+    cudaMalloc((void **)&deviceSrc, (vertices + 1) * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceDst, edges * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceLevel, vertices * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceVertexVisited, sizeof(unsigned int));
 
     // printf("\nDevice memory allocated successfully\n");
     timer.stop();
@@ -157,7 +143,7 @@ int main(char argc, char *argv[])
     // 4. Set the number of threads and blocks
     int threadsPerBlock = 256;
     int blocksPerGrid = (vertices + threadsPerBlock - 1) / threadsPerBlock;
-    unsigned vertexVisited = 1;
+    unsigned int vertexVisited = 1;
 
     int currentLevel = 1; // we start from level 1 since we already set the level of the source vertex to 0
 

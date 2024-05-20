@@ -8,63 +8,111 @@
 #include <vector>
 #include <queue>
 #include "graph.h"
+#include "timer.h"
 
-__host__ vector<int> BFS(Graph &graph, int startVertex)
+__host__ void bfs_cpu(unsigned int *srcPtrs, unsigned int *dst, unsigned int *level, int srcVertex)
 {
-    // create a queue for BFS
-    queue<int> bfsQueue;
-    vector<bool> visited(graph.numberOfVertices, false);
-    vector<int> bfsTraversal;
+    // this function will be used to compare the results of the GPU with the CPU
+    // define a queue to store the vertices
+    std::queue<int> verticesQueue;
+
+    // vector<bool> visited(vertices, false);
 
     // mark the current node as visited and enqueue it
-    visited[startVertex] = true;
-    bfsQueue.push(startVertex);
+    level[srcVertex] = 0;
+    verticesQueue.push(srcVertex);
 
-    while (!bfsQueue.empty())
+    while (!verticesQueue.empty())
     {
         // dequeue a vertex from queue and print it
-        int currentVertex = bfsQueue.front();
-        bfsQueue.pop();
+        int currentVertex = verticesQueue.front();
+        verticesQueue.pop();
 
-        bfsTraversal.push_back(currentVertex);
+        int start = srcPtrs[currentVertex];
+        int end = srcPtrs[currentVertex + 1];
 
         // get all adjacent vertices of the dequeued vertex
         // if an adjacent has not been visited, then mark it visited and enqueue it
-        for (int i = 0; i < graph.adjacencyList[currentVertex].size(); i++)
+        for (int i = start; i < end; i++)
         {
-            int adjacentVertex = graph.adjacencyList[currentVertex][i];
-            if (!visited[adjacentVertex])
+            int neighbour = dst[i];
+            if (level[neighbour] == UINT_MAX)
             {
-                visited[adjacentVertex] = true;
-                bfsQueue.push(adjacentVertex);
+                verticesQueue.push(neighbour);
+                level[neighbour] = level[currentVertex] + 1;
             }
         }
     }
-
-    return bfsTraversal;
 }
 
 int main(int argc, char *argv[])
 {
-    // read the filename from the command line
-
-    // declarations
-    char *filename = argv[1];
-    FILE *file = fopen(filename, "r");
-    Graph graph;
-    int vertices, edges;
-    vector<int> bfsGraph;
-
-    createGraph(file, graph, vertices, edges); // reads and creates graph from the file given
-    // printGraph(graph);                         // prints the graph
-
-    // BFS traversal
-    bfsGraph = BFS(graph, 0);
-
-    for (int i = 0; i < bfsGraph.size(); i++)
+    if (argc < 4)
     {
-        printf("%d ", bfsGraph[i]);
+        printf("Please provide the paths of the input and output files and the source vertex\n");
+        return 1;
     }
+
+    FILE *inputFile;
+    FILE *outputFile;
+    int srcVertex = atoi(argv[3]);
+    Timer timer;
+
+    inputFile = fopen(argv[1], "r");
+    outputFile = fopen(argv[2], "w");
+
+    if (!inputFile || !outputFile)
+    {
+        printf("Please provide the correct path of both files");
+        return 1;
+    }
+
+    // 1. Allocate host memory for the graph
+    int vertices, edges;
+
+    // Read the number of vertices and edges
+    fscanf(inputFile, "%d %d", &vertices, &edges);
+
+    unsigned int *srcPtrs = (unsigned int *)malloc((vertices + 1) * sizeof(unsigned int)); // allocate with the actual number of source vertices => directed graph
+    unsigned int *dst = (unsigned int *)malloc(edges * sizeof(unsigned int));
+    unsigned int *level = (unsigned int *)malloc(vertices * sizeof(unsigned int));
+    unsigned int *levelCPU = (unsigned int *)malloc(vertices * sizeof(unsigned int));
+
+    // Initialize the level of each vertex to -1
+    // and the source vertex to 0
+    for (int i = 0; i < vertices; i++)
+    {
+        if (i == srcVertex)
+        {
+            level[i] = 0;
+            levelCPU[i] = 0;
+        }
+        else
+        {
+            level[i] = UINT_MAX;
+            levelCPU[i] = UINT_MAX;
+        }
+    }
+
+    // Construct the graph using the CSR representation
+    CSRGraph(inputFile, srcPtrs, dst, edges);
+
+    // Run the CPU BFS
+    timer.start();
+    bfs_cpu(srcPtrs, dst, levelCPU, srcVertex);
+    timer.stop();
+
+    // 7. Write the result to the output file
+    FILE * cpuOutputFile = fopen("output/cpu_output.txt", "w");
+    for (int i = 0; i < vertices; i++)
+    {
+        fprintf(cpuOutputFile, "%d %d\n", i, levelCPU[i]);
+    }
+
+    double cpuTime = timer.elapsed();
+    printf("\033[0;33m"); // set color to yellow
+    printf("CPU Time: %f ms\n", cpuTime);
+    printf("\033[0m"); // reset color
 
     return 0;
 }
