@@ -19,20 +19,20 @@
  - Only the calling of the kernels in the main function will be changed
 */
 
-__global__ void vertex_centric_pull_bfs(int *srcPtrs, int *dst, int *level, int currentLevel, int vertices, int edges, int *vertexVisited)
+__global__ void vertex_centric_pull_bfs(unsigned int *srcPtrs, unsigned int *dst, unsigned int *level, int currentLevel, int vertices, int edges, unsigned int *vertexVisited)
 {
-    int vertex = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int vertex = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (vertex < vertices)
     {
-        if (level[vertex] == -1)
+        if (level[vertex] == UINT_MAX)
         {
             // check if my neighbours are in the previous level
-            int start = srcPtrs[vertex];
-            int end = srcPtrs[vertex + 1];
-            for (int i = start; i < end; i++)
+            unsigned int start = srcPtrs[vertex];
+            unsigned int end = srcPtrs[vertex + 1];
+            for (unsigned int i = start; i < end; i++)
             {
-                int neighbour = dst[i];
+                unsigned int neighbour = dst[i];
                 if (level[neighbour] == currentLevel - 1)
                 {
                     level[vertex] = currentLevel;
@@ -44,12 +44,12 @@ __global__ void vertex_centric_pull_bfs(int *srcPtrs, int *dst, int *level, int 
     }
 }
 
-__global__ void vertex_centric_push_bfs(int *srcPtrs, int *dst, int *level, int currentLevel, int vertices, int edges, int *vertexVisited)
+__global__ void vertex_centric_push_bfs(unsigned int *srcPtrs, unsigned int *dst, unsigned int *level, int currentLevel, int vertices, int edges, unsigned int *vertexVisited)
 {
     // each thread is assigned a vertex
     // since this is considered a 1-D array we will use the the x index to get the vertex for each thread
     // following the basis of a vector addition
-    int vertex = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int vertex = blockIdx.x * blockDim.x + threadIdx.x;
 
     // boundary conditions
     // check if the vertex is inside the graph
@@ -60,16 +60,16 @@ __global__ void vertex_centric_push_bfs(int *srcPtrs, int *dst, int *level, int 
         {
             // get the starting and ending index of the edges of the vertex
             // the srcPtrs contain the starting index of the edges of the vertex for each row (vertex)
-            int start = srcPtrs[vertex];
-            int end = srcPtrs[vertex + 1];
+            unsigned int start = srcPtrs[vertex];
+            unsigned int end = srcPtrs[vertex + 1];
 
             // iterate over the neighbours of the vertex
-            for (int i = start; i < end; i++)
+            for (unsigned int i = start; i < end; i++)
             {
-                int neighbour = dst[i];
+                unsigned int neighbour = dst[i];
                 // printf("Vertex: %d, Neighbour: %d, Level: %d, Current Level: %d\n", vertex, neighbour, level[neighbour], currentLevel);
                 // check if the neighbour has not been visited
-                if (level[neighbour] == -1)
+                if (level[neighbour] == UINT_MAX)
                 {
                     level[neighbour] = currentLevel;
                     *vertexVisited = 1;
@@ -112,9 +112,9 @@ int main(char argc, char *argv[])
     // Read the number of vertices and edges
     fscanf(inputFile, "%d %d", &vertices, &edges);
 
-    int *srcPtrs = (int *)malloc((vertices + 1) * sizeof(int));
-    int *dst = (int *)malloc(edges * sizeof(int));
-    int *level = (int *)malloc(vertices * sizeof(int));
+    unsigned int *srcPtrs = (unsigned int *)malloc((vertices + 1) * sizeof(unsigned int));
+    unsigned int *dst = (unsigned int *)malloc(edges * sizeof(unsigned int));
+    unsigned int *level = (unsigned int *)malloc(vertices * sizeof(unsigned int));
     // unsigned int *vertexVisited = (unsigned int *)malloc(sizeof(unsigned int));
 
     // printf("Host memory allocated successfully\n");
@@ -126,7 +126,7 @@ int main(char argc, char *argv[])
         if (i == srcVertex)
             level[i] = 0;
         else
-            level[i] = -1;
+            level[i] = UINT_MAX;
     }
 
     // Create a graph using the CSR representation
@@ -136,15 +136,15 @@ int main(char argc, char *argv[])
 
     // 2. Allocate device memory for the graph
     timer.start();
-    int *deviceSrc;
-    int *deviceDst;
-    int *deviceLevel;
-    int *deviceVertexVisited;
+    unsigned int *deviceSrc;
+    unsigned int *deviceDst;
+    unsigned int *deviceLevel;
+    unsigned int *deviceVertexVisited;
 
-    cudaMalloc((void **)&deviceSrc, (vertices + 1) * sizeof(int));
-    cudaMalloc((void **)&deviceDst, edges * sizeof(int));
-    cudaMalloc((void **)&deviceLevel, vertices * sizeof(int));
-    cudaMalloc((void **)&deviceVertexVisited, sizeof(int));
+    cudaMalloc((void **)&deviceSrc, (vertices + 1) * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceDst, edges * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceLevel, vertices * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceVertexVisited, sizeof(unsigned int));
 
     // printf("\nDevice memory allocated successfully\n");
     timer.stop();
@@ -153,9 +153,9 @@ int main(char argc, char *argv[])
 
     // 3. Copy memory to the device
     timer.start();
-    cudaMemcpy(deviceSrc, srcPtrs, (vertices + 1) * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(deviceDst, dst, edges * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(deviceLevel, level, vertices * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceSrc, srcPtrs, (vertices + 1) * sizeof(unsigned int), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceDst, dst, edges * sizeof(unsigned int), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceLevel, level, vertices * sizeof(unsigned int), cudaMemcpyHostToDevice);
     timer.stop();
 
     // printf("Copied to GPU successfully\n");
@@ -173,20 +173,27 @@ int main(char argc, char *argv[])
     // printf("Launching Kernel\n");
     // 5. Launch the kernel
     timer.start();
+
     while (vertexVisited)
     {
-        vertexVisited = 0;
-        cudaMemcpy(deviceVertexVisited, &vertexVisited, sizeof(unsigned int), cudaMemcpyHostToDevice); // copy the vertexVisited to the device before the launch of each kernel
+        vertexVisited = 0; // reset the vertexVisited to 0 for each level
+
+        // copy the vertexVisited to the device before the launch of each kernel
+        cudaMemcpy(deviceVertexVisited, &vertexVisited, sizeof(unsigned int), cudaMemcpyHostToDevice);
 
         // kernel processes each level
         // the kernel will be called for each level in the graph
         // global synchronisation across different levels
-        if (currentLevel == 1)
-            vertex_centric_push_bfs<<<threadsPerBlock, blocksPerGrid>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
-        else
-            vertex_centric_pull_bfs<<<threadsPerBlock, blocksPerGrid>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
 
-        cudaMemcpy(&vertexVisited, deviceVertexVisited, sizeof(unsigned int), cudaMemcpyDeviceToHost); // copy the vertexVisited back to the host after the kernel has finished to check whether any vertex has been visited if not the max depth reached
+
+        if (currentLevel == 1) // if the current vertex is 1 then use the top-down approach (can be done for the first few levels)
+            vertex_centric_push_bfs<<<blocksPerGrid, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
+        else
+            vertex_centric_pull_bfs<<<blocksPerGrid, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
+
+        
+        // copy the vertexVisited back to the host after the kernel has finished to check whether any vertex has been visited if not the max depth reached
+        cudaMemcpy(&vertexVisited, deviceVertexVisited, sizeof(unsigned int), cudaMemcpyDeviceToHost);
         currentLevel++;
     }
 

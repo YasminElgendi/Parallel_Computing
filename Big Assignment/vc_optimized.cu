@@ -46,15 +46,18 @@
 
 __global__ void vertex_centric_optimized_bfs(unsigned int *srcPtrs, unsigned int *dst, unsigned int *level, unsigned int *currentQueue,
                                              unsigned int *previousQueue, int currentLevel, unsigned int *numberOfCurrentQueue, int numberOfPreviousQueue,
-                                             int vertices, int edges)
+                                             int vertices, int edges, unsigned int *numberOfLevels)
 {
     // define the shared memory for the frontier
     __shared__ unsigned int sharedCurrentQueue[LOCAL_QUEUE_SIZE];
     __shared__ unsigned int sharedNumCurrentFrontier;
+    __shared__ unsigned int sharedNumLevels;
 
     // only need a single thread to initialize the shared memory not all but make sure all threads are synchronized
     if (threadIdx.x == 0)
     {
+        // printf("Regular kernel\n");
+        sharedNumLevels = 1;
         sharedNumCurrentFrontier = 0;
     }
 
@@ -110,11 +113,131 @@ __global__ void vertex_centric_optimized_bfs(unsigned int *srcPtrs, unsigned int
     if (threadIdx.x == 0)
     {
         sharedStartIndex = atomicAdd(numberOfCurrentQueue, sharedNumCurrentFrontier);
+
+        // copy the number of levels to the global memory
+        *numberOfLevels = sharedNumLevels;
     }
 
     __syncthreads();
 
     for (unsigned int i = threadIdx.x; i < sharedNumCurrentFrontier; i += blockDim.x) // memory coalescing achieved
+    {
+        currentQueue[sharedStartIndex + i] = sharedCurrentQueue[i];
+    }
+}
+
+// The kernel is only called when the number of vertices of two consecutive queues combined is less than the number of threads in a single block
+// This is to minimize the overhead of the kernel launch
+// This will create a local level array for the block and synchronize at the end
+__global__ void minimize_overhead_kernel(unsigned int *srcPtrs, unsigned int *dst, unsigned int *level, unsigned int *currentQueue,
+                                         unsigned int *previousQueue, int currentLevel, unsigned int *numberOfCurrentQueue, int numberOfPreviousQueue,
+                                         int vertices, int edges, unsigned int *numberOfLevels)
+{
+    __shared__ unsigned int sharedPreviuosQueue[LOCAL_QUEUE_SIZE];
+    __shared__ unsigned int sharedCurrentQueue[LOCAL_QUEUE_SIZE];
+    __shared__ unsigned int sharedNumPreviousQueue;
+    __shared__ unsigned int sharedNumCurrentQueue;
+    __shared__ unsigned int sharedNumLevels;
+
+    // Since we have a single block the vertex index in the queue is the thread index
+    int threadIndex = threadIdx.x;
+
+    // only need a single thread to initialize the shared memory not all but make sure all threads are synchronized
+    if (threadIndex == 0)
+    {
+        sharedNumPreviousQueue = numberOfPreviousQueue;
+        sharedNumCurrentQueue = 0;
+        sharedNumLevels = 0;
+    }
+    __syncthreads();
+
+    // Copy the previous queue to the shared memory
+    for (int i = threadIndex; i < sharedNumPreviousQueue; i += blockDim.x)
+    {
+        sharedPreviuosQueue[i] = previousQueue[i];
+    }
+    __syncthreads();
+
+    // While the number of vertices in the previous queue is greater than 0 and the number of vertices in the current queue is less than the block size
+    // If the number of vertices in the current queue is greates than the block size then we will add the vertices to the global queue
+
+
+    while (sharedNumPreviousQueue > 0 && sharedNumCurrentQueue <= blockDim.x)
+    {
+        // Reset the number of vertices in the current queue
+        if (threadIndex == 0)
+        {
+            sharedNumCurrentQueue = 0;
+        }
+        __syncthreads();
+
+        // ... 
+
+        // Process the vertices in the queue
+        for (unsigned int i = threadIndex; i < sharedNumPreviousQueue; i += blockDim.x)
+        {
+            unsigned int vertex = sharedPreviuosQueue[i];
+            unsigned int start = srcPtrs[vertex];
+            unsigned int end = srcPtrs[vertex + 1];
+
+            for (unsigned int j = start; j < end; j++)
+            {
+                unsigned int neighbour = dst[j];
+                if (atomicCAS(&level[neighbour], UINT_MAX, currentLevel + sharedNumLevels) == UINT_MAX)
+                {
+                    unsigned int sharedIndex = atomicAdd(&sharedNumCurrentQueue, 1);
+                    if (sharedIndex < LOCAL_QUEUE_SIZE)
+                    {
+                        sharedCurrentQueue[sharedIndex] = neighbour;
+                    }
+                    else
+                    {
+                        sharedNumCurrentQueue = LOCAL_QUEUE_SIZE;
+                        unsigned int index = atomicAdd(numberOfCurrentQueue, 1);
+                        currentQueue[index] = neighbour;
+                    }
+                }
+            }
+        }
+        __syncthreads();
+
+        if (threadIndex == 0)
+        {
+            // Copy the current queue to the previous queue
+            // The previous queue becomes the current queue for the next iteration
+            sharedNumPreviousQueue = sharedNumCurrentQueue; 
+
+            // Increment the number of levels to indicate a level has been processed
+            atomicAdd(&sharedNumLevels, 1);
+        }
+        __syncthreads();
+
+        // Each thread copies an element from the current queue to the previous queue
+        for (int i = threadIndex; i < sharedNumCurrentQueue; i += blockDim.x)
+        {
+            sharedPreviuosQueue[i] = sharedCurrentQueue[i];
+        }
+        __syncthreads();
+
+
+        // if (sharedNumPreviousQueue > LOCAL_QUEUE_SIZE)
+        //     break;
+    }
+
+    // copy the shared memory to the global memory
+    __shared__ unsigned int sharedStartIndex; // get the start index of the current queue in the global memory
+
+    if (threadIdx.x == 0)
+    {
+        sharedStartIndex = atomicAdd(numberOfCurrentQueue, sharedNumCurrentQueue);
+
+        // copy the number of levels to the global memory
+        *numberOfLevels = sharedNumLevels;
+    }
+
+    __syncthreads();
+
+    for (unsigned int i = threadIdx.x; i < sharedNumCurrentQueue; i += blockDim.x) // memory coalescing achieved
     {
         currentQueue[sharedStartIndex + i] = sharedCurrentQueue[i];
     }
@@ -233,6 +356,7 @@ int main(char argc, char *argv[])
     unsigned int *deviceTemp1;           // used to swap the current and previous queues
     unsigned int *deviceTemp2;           // used to swap the current and previous queues
     unsigned int *deviceNumCurrentQueue; // the number of vertices in the queue of the current level
+    unsigned int *deviceNumLevels;       // the number of levels updated in the kernel
 
     cudaMalloc((void **)&deviceSrc, (vertices + 1) * sizeof(unsigned int));
     cudaMalloc((void **)&deviceDst, edges * sizeof(unsigned int));
@@ -240,6 +364,7 @@ int main(char argc, char *argv[])
     cudaMalloc((void **)&deviceTemp1, vertices * sizeof(unsigned int));
     cudaMalloc((void **)&deviceTemp2, vertices * sizeof(unsigned int));
     cudaMalloc((void **)&deviceNumCurrentQueue, sizeof(unsigned int));
+    cudaMalloc((void **)&deviceNumLevels, sizeof(unsigned int));
     cudaDeviceSynchronize();
 
     unsigned int *devicePreviosQueue = deviceTemp1;
@@ -270,6 +395,7 @@ int main(char argc, char *argv[])
     int numberOfPreviousQueue = 1;
 
     int currentLevel = 1; // we start from level 1 since we already set the level of the source vertex to 0
+    int numberOfLevels = 0;
 
     // 5. Launch the kernel
     timer.start();
@@ -280,10 +406,23 @@ int main(char argc, char *argv[])
     while (numberOfPreviousQueue > 0)
     {
         cudaMemset(deviceNumCurrentQueue, 0, sizeof(unsigned int));                      // reset the number of vertices in the current queue
+
+
+        cudaMemset(deviceNumLevels, 0, sizeof(unsigned int));  // reset the number of vertices in the current queue
+
+
         blocksPerGrid = (numberOfPreviousQueue + threadsPerBlock - 1) / threadsPerBlock; // calculate the number of blocks needed for the current queue
 
-        vertex_centric_optimized_bfs<<<blocksPerGrid, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, deviceCurrentQueue, devicePreviosQueue,
-                                                                         currentLevel, deviceNumCurrentQueue, numberOfPreviousQueue, vertices, edges);
+        if (numberOfPreviousQueue <= threadsPerBlock)
+        {
+            minimize_overhead_kernel<<<1, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, deviceCurrentQueue, devicePreviosQueue,
+                                                             currentLevel, deviceNumCurrentQueue, numberOfPreviousQueue, vertices, edges, deviceNumLevels);
+        }
+        else
+        {
+            vertex_centric_optimized_bfs<<<blocksPerGrid, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, deviceCurrentQueue, devicePreviosQueue,
+                                                                             currentLevel, deviceNumCurrentQueue, numberOfPreviousQueue, vertices, edges, deviceNumLevels);
+        }
 
         // Copy the number of the current queue of the device to the number of previous queue of the host
         cudaMemcpy(&numberOfPreviousQueue, deviceNumCurrentQueue, sizeof(unsigned int), cudaMemcpyDeviceToHost);
@@ -293,7 +432,11 @@ int main(char argc, char *argv[])
         devicePreviosQueue = deviceCurrentQueue;
         deviceCurrentQueue = temp;
 
-        currentLevel++;
+        // Copy the number of levels to the host
+        cudaMemcpy(&numberOfLevels, deviceNumLevels, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+
+        currentLevel += numberOfLevels;
+
     }
 
     cudaDeviceSynchronize(); // wait for all kernels to finish so that the level array is updated
@@ -331,6 +474,7 @@ int main(char argc, char *argv[])
     free(srcPtrs);
     free(dst);
     free(level);
+    free(levelCPU);
 
     // Free device memory
     timer.start();
@@ -340,6 +484,7 @@ int main(char argc, char *argv[])
     cudaFree(devicePreviosQueue);
     cudaFree(deviceCurrentQueue);
     cudaFree(deviceNumCurrentQueue);
+    cudaFree(deviceNumLevels);
     timer.stop();
 
     double deallocationTime = timer.elapsed();

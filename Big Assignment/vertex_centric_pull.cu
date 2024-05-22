@@ -17,25 +17,30 @@
     - This approach has less control divergence since it breaks the loop if a single neighbour has been visited and updates the level of the current vertex for a vertex that has very large neighborhoods
 */
 
-__global__ void vertex_centric_pull_bfs(int *srcPtrs, int *dst, int *level, int currentLevel, int vertices, int edges, int *vertexVisited)
+__global__ void vertex_centric_pull_bfs(unsigned int *srcPtrs, unsigned int *dst, unsigned int *level, int currentLevel, int vertices, int edges, unsigned int *vertexVisited)
 {
-    int vertex = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int vertex = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (vertex < vertices)
     {
-        if (level[vertex] == -1)
+        if (level[vertex] == UINT_MAX)
         {
             // check if my neighbours are in the previous level
-            int start = srcPtrs[vertex];
-            int end = srcPtrs[vertex + 1];
-            for (int i = start; i < end; i++)
+            unsigned int start = srcPtrs[vertex];
+            unsigned int end = srcPtrs[vertex + 1];
+
+            for (unsigned int i = start; i < end; i++)
             {
-                int neighbour = dst[i];
-                if (level[neighbour] == currentLevel - 1)
+                unsigned int neighbour = dst[i];
+                if (level[neighbour] == currentLevel - 1) // if the neighbor from the previous level has been visites
                 {
-                    level[vertex] = currentLevel;
-                    *vertexVisited = 1;
-                    break; // if one of the vertex neighbours has been visited then no need to check the rest of the neighbours (we're just setting the level of the current vertex)
+                    level[vertex] = currentLevel; // set the level of the current vertex to the current level
+                    *vertexVisited = 1; // set the visited flag to indicate a change has been made
+
+                    // this is where we achieve less control divergence
+                    // if one of the vertex neighbours has been visited then no need to check the rest of the neighbours
+                    // since we're just setting the level of the current vertex
+                    break; 
                 }
             }
         }
@@ -71,9 +76,9 @@ int main(char argc, char *argv[])
     // Read the number of vertices and edges
     fscanf(inputFile, "%d %d", &vertices, &edges);
 
-    int *srcPtrs = (int *)malloc((vertices + 1) * sizeof(int));
-    int *dst = (int *)malloc(edges * sizeof(int));
-    int *level = (int *)malloc(vertices * sizeof(int));
+    unsigned int *srcPtrs = (unsigned int *)malloc((vertices + 1) * sizeof(unsigned int));
+    unsigned int *dst = (unsigned int *)malloc(edges * sizeof(unsigned int));
+    unsigned int *level = (unsigned int *)malloc(vertices * sizeof(unsigned int));
     // unsigned int *vertexVisited = (unsigned int *)malloc(sizeof(unsigned int));
 
     // printf("Host memory allocated successfully\n");
@@ -85,7 +90,7 @@ int main(char argc, char *argv[])
         if (i == srcVertex)
             level[i] = 0;
         else
-            level[i] = -1;
+            level[i] = UINT_MAX;
     }
 
     // Create a graph using the CSR representation
@@ -95,15 +100,15 @@ int main(char argc, char *argv[])
 
     // 2. Allocate device memory for the graph
     timer.start();
-    int *deviceSrc;
-    int *deviceDst;
-    int *deviceLevel;
-    int *deviceVertexVisited;
+    unsigned int *deviceSrc;
+    unsigned int *deviceDst;
+    unsigned int *deviceLevel;
+    unsigned int *deviceVertexVisited;
 
-    cudaMalloc((void **)&deviceSrc, (vertices + 1) * sizeof(int));
-    cudaMalloc((void **)&deviceDst, edges * sizeof(int));
-    cudaMalloc((void **)&deviceLevel, vertices * sizeof(int));
-    cudaMalloc((void **)&deviceVertexVisited, sizeof(int));
+    cudaMalloc((void **)&deviceSrc, (vertices + 1) * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceDst, edges * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceLevel, vertices * sizeof(unsigned int));
+    cudaMalloc((void **)&deviceVertexVisited, sizeof(unsigned int));
 
     // printf("\nDevice memory allocated successfully\n");
     timer.stop();
@@ -140,7 +145,7 @@ int main(char argc, char *argv[])
         // kernel processes each level
         // the kernel will be called for each level in the graph
         // global synchronisation across different levels
-        vertex_centric_pull_bfs<<<threadsPerBlock, blocksPerGrid>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
+        vertex_centric_pull_bfs<<<blocksPerGrid, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
 
         cudaMemcpy(&vertexVisited, deviceVertexVisited, sizeof(unsigned int), cudaMemcpyDeviceToHost); // copy the vertexVisited back to the host after the kernel has finished to check whether any vertex has been visited if not the max depth reached
         currentLevel++;

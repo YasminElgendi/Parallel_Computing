@@ -45,17 +45,18 @@ __global__ void vertex_centric_push_bfs(unsigned int *srcPtrs, unsigned int *dst
         {
             // get the starting and ending index of the edges of the vertex
             // the srcPtrs contain the starting index of the edges of the vertex for each row (vertex)
-            unsigned int start = srcPtrs[vertex];
-            unsigned int end = srcPtrs[vertex + 1];
+            unsigned int start = srcPtrs[vertex];   // this marks the start of the edges of the vertex
+            unsigned int end = srcPtrs[vertex + 1]; // this marks the start of the edges of the next vertex => the end of the edges of the current vertex
 
             // iterate over the neighbours of the vertex
             for (unsigned int i = start; i < end; i++)
             {
-                unsigned int neighbour = dst[i];
+                unsigned int neighbour = dst[i]; // get the neighbour of the vertex
 
-                // check if the neighbour has not been visited
-                if (level[neighbour] == UINT_MAX)
+                if (level[neighbour] == UINT_MAX) // check if the neighbour has not been visited
                 {
+                    // if the neighbour has not been visited then set the level of the neighbour to the current level
+                    // and mark the vertex as visited
                     level[neighbour] = currentLevel;
                     *vertexVisited = 1;
                 }
@@ -150,18 +151,24 @@ int main(char argc, char *argv[])
     // printf("Launching Kernel\n");
     // 5. Launch the kernel
     timer.start();
+
     while (vertexVisited)
     {
-        vertexVisited = 0;
-        cudaMemcpy(deviceVertexVisited, &vertexVisited, sizeof(unsigned int), cudaMemcpyHostToDevice); // copy the vertexVisited to the device before the launch of each kernel
+        vertexVisited = 0; // reset the vertexVisited to 0 for each level
+
+        // copy the vertexVisited to the device before the launch of each kernel
+        cudaMemcpy(deviceVertexVisited, &vertexVisited, sizeof(unsigned int), cudaMemcpyHostToDevice); 
 
         // kernel processes each level
         // the kernel will be called for each level in the graph
-        // global synchronisation across different levels
-        vertex_centric_push_bfs<<<threadsPerBlock, blocksPerGrid>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
+        // global synchronisation across different levels is required
+        vertex_centric_push_bfs<<<blocksPerGrid, threadsPerBlock>>>(deviceSrc, deviceDst, deviceLevel, currentLevel, vertices, edges, deviceVertexVisited);
 
-        cudaMemcpy(&vertexVisited, deviceVertexVisited, sizeof(unsigned int), cudaMemcpyDeviceToHost); // copy the vertexVisited back to the host after the kernel has finished to check whether any vertex has been visited if not the max depth reached
-        currentLevel++;
+        // copy the vertexVisited back to the host after the kernel has finished to check whether any vertex has been newly visited 
+        // if not the max depth reached then all vertices in the current level have been visited
+        cudaMemcpy(&vertexVisited, deviceVertexVisited, sizeof(unsigned int), cudaMemcpyDeviceToHost); 
+
+        currentLevel++; // increment the current level for the next iteration
     }
 
     cudaDeviceSynchronize(); // wai for all kernels to finish so that the level array is updated

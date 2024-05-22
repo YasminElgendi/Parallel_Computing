@@ -2,6 +2,7 @@ import sys
 
 # compre two files
 def main():
+    print("Comparing files...")
     if len(sys.argv) != 3:
         print("Usage: python compare.py file1 file2")
         return
